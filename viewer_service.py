@@ -350,6 +350,7 @@ class ViewerService:
             "genres": metadata.get("genres", []),
             "categories": metadata.get("categories", []),
             "tags": metadata.get("tags", []),
+            "short_description": metadata.get("short_description", ""),
         }
         self.cache.setdefault("steam_metadata", {})[str(appid)] = cached_metadata
         self._save_cache()
@@ -373,6 +374,7 @@ class ViewerService:
             "steam_tags": steam_tags,
             "steam_genres": steam_metadata.get("genres", []),
             "steam_categories": steam_metadata.get("categories", []),
+            "steam_short_description": steam_metadata.get("short_description", ""),
             "installed": bool(game.get("installed")),
             "last_played": last_played,
             "twitch_box_art_url": self._cache_remote_image(

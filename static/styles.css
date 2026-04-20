@@ -418,6 +418,40 @@ button:disabled {
   font: inherit;
 }
 
+.tags-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tags-input-group input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-tags-button {
+  flex-shrink: 0;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #8bc53f, #6a9e2f);
+  color: #071019;
+  padding: 0 16px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-tags-button:hover {
+  filter: brightness(1.08);
+}
+
+.ai-tags-button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.8) brightness(0.72);
+  opacity: 0.62;
+}
+
 .modal-field input[readonly] {
   color: var(--accent);
 }
@@ -445,9 +479,150 @@ button:disabled {
   color: var(--muted);
 }
 
+.app-container {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 24px;
+  margin-top: 24px;
+}
 
+.dock {
+  flex-shrink: 0;
+  width: 300px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 16px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  position: sticky;
+  top: 24px;
+}
 
+.dock-header {
+  margin-bottom: 16px;
+}
 
+.dock-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--accent);
+}
+
+.dock-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dock-card {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-soft);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 140ms ease;
+}
+
+.dock-card:hover {
+  border-color: rgba(102, 192, 244, 0.42);
+}
+
+.dock-card__image {
+  aspect-ratio: 460 / 215;
+  background: #0b1118;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dock-card__image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dock-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dock-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dock-card__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.dock-card__viewer {
+  border-radius: 999px;
+  background: rgba(139, 197, 63, 0.16);
+  color: var(--green);
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dock-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.dock-card__meta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
+.dock-card__buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dock-card__buttons button {
+  flex: 1;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.dock-card__buttons .launch-button {
+  background: linear-gradient(180deg, var(--green), #6a9e2f);
+  color: #071019;
+}
+
+.dock-card__buttons .stream-button {
+  background: linear-gradient(180deg, #66c0f4, #1a78aa);
+  color: #071019;
+}
+
+@media (max-width: 1024px) {
+  .app-container {
+    flex-direction: column;
+  }
+  .dock {
+    width: 100%;
+    max-height: none;
+    position: static;
+  }
+}
 
 @media (max-width: 760px) {
   .topbar__inner {

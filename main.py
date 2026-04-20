@@ -5,6 +5,7 @@ import secrets
 import threading
 import time
 import webbrowser
+import requests
 from pathlib import Path
 from typing import Optional
 
@@ -397,6 +398,75 @@ def update_stream():
             args[key] = value
     return redirect(url_for("index", **args))
 
+
+@app.route("/api/generate-tags", methods=["POST"])
+def generate_tags():
+    """Generate Twitch stream tags using local LLM."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    game_name = data.get("game_name", "")
+    steam_tags = data.get("steam_tags", [])
+    game_description = data.get("game_description", "")
+    
+    # Construct prompt for LLM
+    prompt = f"""You are a Twitch stream tag assistant. Generate relevant tags for a Twitch stream about the game "{game_name}".
+
+Game details:
+- Name: {game_name}
+- Steam tags: {', '.join(steam_tags) if steam_tags else 'None'}
+- Description: {game_description if game_description else 'No description provided.'}
+
+Twitch tags help viewers discover streams. Tags must follow these rules:
+1. Maximum 10 tags (but aim for 5-8 relevant tags)
+2. Each tag must be lowercase, alphanumeric, and may contain underscores or hyphens (no spaces)
+3. Tags should be comma-separated
+4. Tags should be relevant to the game, genre, gameplay style, mood, or stream content (e.g., "firstplaythrough", "nobackseating", "horror", "indie", "multiplayer")
+5. Do not include offensive or inappropriate tags.
+6. Output ONLY a JSON array of tag strings, like ["tag1", "tag2", "tag3"]
+
+Provide tags that would help attract viewers on Twitch."""
+    
+    try:
+        # Call LM Studio OpenAI-compatible endpoint
+        lm_response = requests.post(
+            "http://127.0.0.1:1234/v1/chat/completions",
+            json={
+                "model": "qwen/qwen3-vl-8b",
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant that outputs JSON arrays."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2,
+                "max_tokens": 300
+            },
+            timeout=30
+        )
+        lm_response.raise_for_status()
+        result = lm_response.json()
+        content = result["choices"][0]["message"]["content"]
+        # Parse JSON from content (could be array or object with tags key)
+        import json as json_module
+        parsed = json_module.loads(content)
+        if isinstance(parsed, dict) and "tags" in parsed:
+            raw_tags = parsed["tags"]
+        elif isinstance(parsed, list):
+            raw_tags = parsed
+        else:
+            raw_tags = []
+        
+        if not isinstance(raw_tags, list):
+            return jsonify({"error": "LLM did not return a list"}), 500
+        
+        # Clean and validate tags using twitch_safe_tags
+        validated_tags = twitch_safe_tags(raw_tags)
+        if validated_tags:
+            return jsonify({"tags": validated_tags})
+        else:
+            return jsonify({"error": "No valid tags generated"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/debug/redirect")
 def debug_redirect():

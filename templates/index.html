@@ -35,76 +35,86 @@
       </div>
     </header>
 
-    <main class="shell" id="main-content">
-      <section class="auth-strip">
-        {% if twitch_auth.connected %}
-          <div>
-            <strong>Twitch connected</strong>
-            <span>{{ twitch_auth.login or twitch_auth.user_id }}</span>
-          </div>
-          <form method="post" action="{{ url_for('twitch_logout') }}">
-            <button type="submit" class="secondary-button">Disconnect</button>
-          </form>
-        {% else %}
-          <div>
-            <strong>Twitch not connected</strong>
-            <span>Connect to enable stream title/category updates.</span>
-          </div>
-          <a class="button-link" href="{{ url_for('twitch_login') }}">Connect Twitch</a>
-        {% endif %}
-      </section>
-
-      <div id="notice-region" aria-live="polite">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <section class="notice notice--{{ category }}">
-                <strong>{{ "Updated" if category == "success" else "Update failed" }}</strong>
-                <span>{{ message }}</span>
-              </section>
-            {% endfor %}
+    <div class="app-container">
+      <aside class="dock">
+        <div class="dock-header">
+          <h2>Recently Launched</h2>
+        </div>
+        <div class="dock-cards" id="dock-cards">
+          <!-- Compact game cards will be inserted here -->
+        </div>
+      </aside>
+      <main class="shell" id="main-content">
+        <section class="auth-strip">
+          {% if twitch_auth.connected %}
+            <div>
+              <strong>Twitch connected</strong>
+              <span>{{ twitch_auth.login or twitch_auth.user_id }}</span>
+            </div>
+            <form method="post" action="{{ url_for('twitch_logout') }}">
+              <button type="submit" class="secondary-button">Disconnect</button>
+            </form>
+          {% else %}
+            <div>
+              <strong>Twitch not connected</strong>
+              <span>Connect to enable stream title/category updates.</span>
+            </div>
+            <a class="button-link" href="{{ url_for('twitch_login') }}">Connect Twitch</a>
           {% endif %}
-        {% endwith %}
-      </div>
-
-      {% if error %}
-        <section class="notice notice--error">
-          <strong>Unable to load games.</strong>
-          <span>{{ error }}</span>
         </section>
-      {% endif %}
 
-      <section class="stats" aria-label="Library stats">
-        <div class="stat">
-          <span>Owned</span>
-          <strong id="stat-owned">{{ stats.total_owned or 0 }}</strong>
+        <div id="notice-region" aria-live="polite">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                <section class="notice notice--{{ category }}">
+                  <strong>{{ "Updated" if category == "success" else "Update failed" }}</strong>
+                  <span>{{ message }}</span>
+                </section>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
         </div>
-        <div class="stat">
-          <span>Processed</span>
-          <strong id="stat-processed">{{ stats.processed or 0 }}</strong>
-        </div>
-        <div class="stat">
-          <span>Twitch Matches</span>
-          <strong id="stat-matched">{{ stats.matched or 0 }}</strong>
-        </div>
-        <div class="stat">
-          <span>Shown</span>
-          <strong id="stat-shown">{{ stats.shown or 0 }}</strong>
-        </div>
-      </section>
 
-       <section class="cache-note" aria-label="Cache settings" {% if job_id %}hidden{% endif %}>
-        <span>Owned game cache: {{ (stats.owned_cache_ttl // 3600) if stats.owned_cache_ttl else 0 }}h</span>
-        <span>Viewer cache: {{ (stats.viewer_cache_ttl // 60) if stats.viewer_cache_ttl else 0 }}m</span>
-        <span id="stream-status">Cache ready.</span>
-      </section>
+        {% if error %}
+          <section class="notice notice--error">
+            <strong>Unable to load games.</strong>
+            <span>{{ error }}</span>
+          </section>
+        {% endif %}
 
-      <section class="library" id="library" aria-label="Games with Twitch viewers"></section>
-       <section class="empty" id="empty-state" {% if games or job_id %}hidden{% endif %}>
-        <h2 id="empty-title">No games found</h2>
-        <p id="empty-text">No live viewer matches found.</p>
-      </section>
-    </main>
+        <section class="stats" aria-label="Library stats">
+          <div class="stat">
+            <span>Owned</span>
+            <strong id="stat-owned">{{ stats.total_owned or 0 }}</strong>
+          </div>
+          <div class="stat">
+            <span>Processed</span>
+            <strong id="stat-processed">{{ stats.processed or 0 }}</strong>
+          </div>
+          <div class="stat">
+            <span>Twitch Matches</span>
+            <strong id="stat-matched">{{ stats.matched or 0 }}</strong>
+          </div>
+          <div class="stat">
+            <span>Shown</span>
+            <strong id="stat-shown">{{ stats.shown or 0 }}</strong>
+          </div>
+        </section>
+
+         <section class="cache-note" aria-label="Cache settings" {% if job_id %}hidden{% endif %}>
+          <span>Owned game cache: {{ (stats.owned_cache_ttl // 3600) if stats.owned_cache_ttl else 0 }}h</span>
+          <span>Viewer cache: {{ (stats.viewer_cache_ttl // 60) if stats.viewer_cache_ttl else 0 }}m</span>
+          <span id="stream-status">Cache ready.</span>
+        </section>
+
+        <section class="library" id="library" aria-label="Games with Twitch viewers"></section>
+         <section class="empty" id="empty-state" {% if games or job_id %}hidden{% endif %}>
+          <h2 id="empty-title">No games found</h2>
+          <p id="empty-text">No live viewer matches found.</p>
+        </section>
+      </main>
+    </div>
 
     <dialog class="modal" id="stream-modal">
       <form class="modal__panel" id="stream-update-form" method="post" action="{{ url_for('update_stream') }}">
@@ -138,7 +148,10 @@
 
         <label class="modal-field">
           <span>Tags</span>
-          <input type="text" name="tags" id="modal-tags" placeholder="nobackseating, firstplaythrough">
+          <div class="tags-input-group">
+            <input type="text" name="tags" id="modal-tags" placeholder="nobackseating, firstplaythrough">
+            <button type="button" class="ai-tags-button" id="ai-tags-button" title="Generate tags using AI">AI-tags</button>
+          </div>
         </label>
 
         <label class="toggle modal-toggle">
@@ -297,6 +310,7 @@
         streamButton.dataset.language = channelInfo.broadcaster_language || 'en';
         streamButton.dataset.tags = (channelInfo.tags || []).join(', ');
         streamButton.dataset.steamTags = (game.steam_tags || []).join(', ');
+        streamButton.dataset.steamDescription = game.steam_short_description || '';
         streamButton.dataset.branded = channelInfo.is_branded_content ? '1' : '0';
         streamButton.disabled = !canUpdateStream;
 
@@ -421,6 +435,60 @@
                 streamSubmitButton.disabled = false;
                 streamSubmitButton.textContent = 'Done';
               }
+            });
+        });
+      }
+
+      // AI-tags button
+      const aiTagsButton = document.getElementById('ai-tags-button');
+      if (aiTagsButton) {
+        aiTagsButton.addEventListener('click', () => {
+          if (!activeStreamButton) return;
+          
+          const gameName = activeStreamButton.dataset.gameName || '';
+          const steamTagsRaw = activeStreamButton.dataset.steamTags || '';
+          const steamTags = steamTagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+          const gameDescription = activeStreamButton.dataset.steamDescription || '';
+          
+          const button = aiTagsButton;
+          const originalText = button.textContent;
+          button.disabled = true;
+          button.textContent = 'Generating...';
+          
+          fetch('/api/generate-tags', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+              game_name: gameName,
+              steam_tags: steamTags,
+              game_description: gameDescription
+            })
+          })
+            .then(response => response.json())
+            .then(data => {
+              if (data.error) {
+                throw new Error(data.error);
+              }
+              if (data.tags && Array.isArray(data.tags)) {
+                // Update tags input field
+                fields.tags.value = data.tags.join(', ');
+                // Also update the active button dataset for consistency
+                activeStreamButton.dataset.steamTags = data.tags.join(', ');
+                activeStreamButton.dataset.tags = data.tags.join(', ');
+                showNotice('success', 'AI tags generated successfully.');
+              } else {
+                throw new Error('Invalid response from AI');
+              }
+            })
+            .catch(error => {
+              showNotice('error', 'Failed to generate AI tags: ' + error.message);
+            })
+            .finally(() => {
+              button.disabled = false;
+              button.textContent = originalText;
             });
         });
       }

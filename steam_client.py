@@ -339,7 +339,7 @@ class SteamClient:
             response.raise_for_status()
             payload = response.json().get(str(appid), {})
             if not payload.get("success"):
-                return {"genres": [], "categories": [], "tags": []}
+                return {"genres": [], "categories": [], "tags": [], "short_description": ""}
 
             data = payload.get("data") or {}
             genres = [
@@ -361,15 +361,22 @@ class SteamClient:
                 if normalized and key not in seen:
                     tags.append(normalized)
                     seen.add(key)
+            
+            # Extract short description (brief one-liner about the game)
+            short_description = data.get("short_description", "").strip()
+            # Limit length to avoid overly long descriptions
+            if len(short_description) > 500:
+                short_description = short_description[:497] + "..."
 
             return {
                 "genres": genres,
                 "categories": categories,
                 "tags": tags,
+                "short_description": short_description,
             }
         except Exception as e:
             print(f"Error getting Steam Store metadata for appid {appid}: {self._safe_error_message(e)}")
-            return {"genres": [], "categories": [], "tags": []}
+            return {"genres": [], "categories": [], "tags": [], "short_description": ""}
     
     def get_game_names(self, appids: List[int]) -> Dict[int, str]:
         """
