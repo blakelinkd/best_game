@@ -1,0 +1,15 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+game_cache.json
+cache/
+static/cache/
+mock_test_data.json
+sample_games.json
+twitch_viewer_report_*.json
+tmp*/
+test_cache_tmp/
+tmpxiz854fa/

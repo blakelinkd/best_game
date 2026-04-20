@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Steam Twitch Viewer Library</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar__inner">
+        <div>
+          <p class="eyebrow">Steam Library</p>
+          <h1>Twitch Viewer Dashboard</h1>
+        </div>
+        <form class="controls" action="{{ url_for('index') }}" method="get">
+          <label class="field">
+            <span>Sort</span>
+            <select id="sort-select" name="sort">
+              <option value="recent">Recently played</option>
+              <option value="installed">Installed</option>
+              <option value="viewers">Viewer count</option>
+            </select>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" name="include_zero" value="1" {% if include_zero %}checked{% endif %}>
+            <span>Show zero-viewer games</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" name="force_refresh" value="1" {% if force_refresh %}checked{% endif %}>
+            <span>Force API refresh</span>
+          </label>
+          <button type="submit">Refresh</button>
+        </form>
+      </div>
+    </header>
+
+    <main class="shell" id="main-content">
+      <section class="auth-strip">
+        {% if twitch_auth.connected %}
+          <div>
+            <strong>Twitch connected</strong>
+            <span>{{ twitch_auth.login or twitch_auth.user_id }}</span>
+          </div>
+          <form method="post" action="{{ url_for('twitch_logout') }}">
+            <button type="submit" class="secondary-button">Disconnect</button>
+          </form>
+        {% else %}
+          <div>
+            <strong>Twitch not connected</strong>
+            <span>Connect to enable stream title/category updates.</span>
+          </div>
+          <a class="button-link" href="{{ url_for('twitch_login') }}">Connect Twitch</a>
+        {% endif %}
+      </section>
+
+      <div id="notice-region" aria-live="polite">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <section class="notice notice--{{ category }}">
+                <strong>{{ "Updated" if category == "success" else "Update failed" }}</strong>
+                <span>{{ message }}</span>
+              </section>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+      </div>
+
+      {% if error %}
+        <section class="notice notice--error">
+          <strong>Unable to load games.</strong>
+          <span>{{ error }}</span>
+        </section>
+      {% endif %}
+
+      <section class="stats" aria-label="Library stats">
+        <div class="stat">
+          <span>Owned</span>
+          <strong id="stat-owned">{{ stats.total_owned or 0 }}</strong>
+        </div>
+        <div class="stat">
+          <span>Processed</span>
+          <strong id="stat-processed">{{ stats.processed or 0 }}</strong>
+        </div>
+        <div class="stat">
+          <span>Twitch Matches</span>
+          <strong id="stat-matched">{{ stats.matched or 0 }}</strong>
+        </div>
+        <div class="stat">
+          <span>Shown</span>
+          <strong id="stat-shown">{{ stats.shown or 0 }}</strong>
+        </div>
+      </section>
+
+       <section class="cache-note" aria-label="Cache settings" {% if job_id %}hidden{% endif %}>
+        <span>Owned game cache: {{ (stats.owned_cache_ttl // 3600) if stats.owned_cache_ttl else 0 }}h</span>
+        <span>Viewer cache: {{ (stats.viewer_cache_ttl // 60) if stats.viewer_cache_ttl else 0 }}m</span>
+        <span id="stream-status">Cache ready.</span>
+      </section>
+
+      <section class="library" id="library" aria-label="Games with Twitch viewers"></section>
+       <section class="empty" id="empty-state" {% if games or job_id %}hidden{% endif %}>
+        <h2 id="empty-title">No games found</h2>
+        <p id="empty-text">No live viewer matches found.</p>
+      </section>
+    </main>
+
+    <dialog class="modal" id="stream-modal">
+      <form class="modal__panel" id="stream-update-form" method="post" action="{{ url_for('update_stream') }}">
+        <div class="modal__header">
+          <div>
+            <p class="eyebrow">Twitch Channel</p>
+            <h2>Update Stream Info</h2>
+          </div>
+          <button type="button" class="icon-button" data-stream-close aria-label="Close">x</button>
+        </div>
+
+        <input type="hidden" name="game_id" id="modal-game-id">
+        {% if include_zero %}
+          <input type="hidden" name="include_zero" value="1">
+        {% endif %}
+
+        <label class="modal-field">
+          <span>Category</span>
+          <input type="text" id="modal-category" readonly>
+        </label>
+
+        <label class="modal-field">
+          <span>Title</span>
+          <input type="text" name="title" id="modal-title" maxlength="140" required>
+        </label>
+
+        <label class="modal-field modal-field--short">
+          <span>Language</span>
+          <input type="text" name="broadcaster_language" id="modal-language" maxlength="12">
+        </label>
+
+        <label class="modal-field">
+          <span>Tags</span>
+          <input type="text" name="tags" id="modal-tags" placeholder="nobackseating, firstplaythrough">
+        </label>
+
+        <label class="toggle modal-toggle">
+          <input type="checkbox" name="is_branded_content" id="modal-branded" value="1">
+          <span>Branded content</span>
+        </label>
+
+        <div class="modal__actions">
+          <button type="button" class="secondary-button" data-stream-close>Cancel</button>
+          <button type="submit" id="stream-submit-button">Done</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      const initialGames = {{ games|tojson }};
+      const jobId = {{ job_id|tojson }};
+      const channelInfo = {{ (channel_info or {})|tojson }};
+      const canUpdateStream = {{ "true" if can_update_stream else "false" }};
+      const library = document.getElementById('library');
+       const emptyState = document.getElementById('empty-state');
+       const emptyTitle = document.getElementById('empty-title');
+       const emptyText = document.getElementById('empty-text');
+      const streamStatus = document.getElementById('stream-status');
+      const sortSelect = document.getElementById('sort-select');
+      const modal = document.getElementById('stream-modal');
+      const streamForm = document.getElementById('stream-update-form');
+      const streamSubmitButton = document.getElementById('stream-submit-button');
+      const noticeRegion = document.getElementById('notice-region');
+      const cardsByAppid = new Map();
+      let activeStreamButton = null;
+      let pollOffset = 0;
+      const fields = {
+        gameId: document.getElementById('modal-game-id'),
+        category: document.getElementById('modal-category'),
+        title: document.getElementById('modal-title'),
+        language: document.getElementById('modal-language'),
+        tags: document.getElementById('modal-tags'),
+        branded: document.getElementById('modal-branded')
+      };
+
+      function compactNumber(value) {
+        const number = Number(value) || 0;
+        if (number >= 1000000) return (number / 1000000).toFixed(1) + 'M';
+        if (number >= 1000) return (number / 1000).toFixed(1) + 'K';
+        return number.toLocaleString();
+      }
+
+      function timestampLabel(value) {
+        const seconds = Number(value) || 0;
+        if (!seconds) return 'Never played';
+        return new Date(seconds * 1000).toLocaleDateString();
+      }
+
+      function showNotice(category, message) {
+        if (!noticeRegion) return;
+        const notice = document.createElement('section');
+        notice.className = `notice notice--${category}`;
+        const heading = document.createElement('strong');
+        heading.textContent = category === 'success' ? 'Updated' : 'Update failed';
+        const text = document.createElement('span');
+        text.textContent = message;
+        notice.append(heading, text);
+        noticeRegion.replaceChildren(notice);
+      }
+
+      function updateStats(stats) {
+        if (!stats) return;
+        document.getElementById('stat-owned').textContent = compactNumber(stats.total_owned);
+        document.getElementById('stat-processed').textContent = compactNumber(stats.processed);
+        document.getElementById('stat-matched').textContent = compactNumber(stats.matched);
+        document.getElementById('stat-shown').textContent = compactNumber(stats.shown);
+      }
+
+      function addMeta(container, text) {
+        const item = document.createElement('span');
+        item.textContent = text;
+        container.appendChild(item);
+      }
+
+      function createCard(game) {
+        const article = document.createElement('article');
+        article.className = 'game-card';
+        article.dataset.appid = game.appid;
+        article.dataset.viewerCount = game.viewer_count || 0;
+        article.dataset.lastPlayed = game.last_played || 0;
+        article.dataset.installed = game.installed ? '1' : '0';
+
+        const imageWrap = document.createElement('div');
+        imageWrap.className = 'game-card__image';
+        const image = document.createElement('img');
+        image.src = game.steam_header_url;
+        image.alt = `${game.name} Steam header`;
+        image.loading = 'lazy';
+        imageWrap.appendChild(image);
+
+        const body = document.createElement('div');
+        body.className = 'game-card__body';
+
+        const heading = document.createElement('div');
+        heading.className = 'game-card__heading';
+        const title = document.createElement('h2');
+        title.textContent = game.name;
+        const viewerPill = document.createElement('span');
+        viewerPill.className = 'viewer-pill';
+        viewerPill.textContent = compactNumber(game.viewer_count);
+        heading.append(title, viewerPill);
+
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        addMeta(meta, `${compactNumber(game.viewer_count)} live viewers`);
+        if (Number(game.playtime_hours) > 0) addMeta(meta, `${game.playtime_hours} hours played`);
+        addMeta(meta, game.installed ? 'Installed' : 'Not installed');
+        addMeta(meta, `Last played: ${timestampLabel(game.last_played)}`);
+
+        body.append(heading, meta);
+        if (game.twitch_name && game.twitch_name !== game.name) {
+          const match = document.createElement('p');
+          match.className = 'match';
+          match.textContent = `Matched on Twitch as ${game.twitch_name}`;
+          body.appendChild(match);
+        }
+
+        const links = document.createElement('div');
+        links.className = 'links';
+        const steamLink = document.createElement('a');
+        steamLink.href = game.steam_url;
+        steamLink.target = '_blank';
+        steamLink.rel = 'noreferrer';
+        steamLink.textContent = 'Steam';
+        const twitchLink = document.createElement('a');
+        twitchLink.href = game.twitch_url;
+        twitchLink.target = '_blank';
+        twitchLink.rel = 'noreferrer';
+        twitchLink.textContent = 'Twitch';
+        links.append(steamLink, twitchLink);
+
+        const launchButton = document.createElement('button');
+        launchButton.type = 'button';
+        launchButton.className = 'launch-button';
+        launchButton.textContent = 'Launch Game';
+        launchButton.title = 'Launch game via Steam client';
+        launchButton.addEventListener('click', () => {
+          window.location.href = `steam://run/${game.appid}`;
+        });
+
+        const streamButton = document.createElement('button');
+        streamButton.type = 'button';
+        streamButton.className = 'stream-button';
+        streamButton.textContent = 'Update stream info';
+        streamButton.dataset.streamOpen = '1';
+        streamButton.dataset.gameName = game.name || '';
+        streamButton.dataset.twitchName = game.twitch_name || '';
+        streamButton.dataset.gameId = game.twitch_game_id || '';
+        streamButton.dataset.title = channelInfo.title || `Playing ${game.name || ''}`;
+        streamButton.dataset.language = channelInfo.broadcaster_language || 'en';
+        streamButton.dataset.tags = (channelInfo.tags || []).join(', ');
+        streamButton.dataset.steamTags = (game.steam_tags || []).join(', ');
+        streamButton.dataset.branded = channelInfo.is_branded_content ? '1' : '0';
+        streamButton.disabled = !canUpdateStream;
+
+        body.append(links, launchButton, streamButton);
+        article.append(imageWrap, body);
+        return article;
+      }
+
+      function applySort() {
+        const cards = Array.from(cardsByAppid.values());
+        const mode = sortSelect.value;
+        cards.sort((a, b) => {
+          if (mode === 'viewers') {
+            return Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
+          }
+          if (mode === 'installed') {
+            return Number(b.dataset.installed) - Number(a.dataset.installed)
+              || Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed);
+          }
+          return Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed)
+            || Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
+        });
+        cards.forEach((card) => library.appendChild(card));
+      }
+
+       function upsertGame(game) {
+        if (!game || !game.appid || cardsByAppid.has(String(game.appid))) return;
+        const card = createCard(game);
+        cardsByAppid.set(String(game.appid), card);
+        library.appendChild(card);
+        applySort();
+      }
+
+       function pollJob() {
+        if (!jobId) return;
+        fetch('/api/progress?job_id=' + encodeURIComponent(jobId) + '&offset=' + pollOffset)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.status === 'error') throw new Error(data.error || 'Unknown error');
+            if (data.status === 'not_found') throw new Error('Job not found');
+
+            (data.games || []).forEach(upsertGame);
+            pollOffset = Number(data.next_offset) || pollOffset;
+            updateStats(data.stats);
+
+            if (data.status === 'done') {
+              const cacheNote = document.querySelector('.cache-note');
+              if (cacheNote) cacheNote.hidden = false;
+              if (cardsByAppid.size === 0) {
+                emptyState.hidden = false;
+              }
+              return;
+            }
+
+            setTimeout(pollJob, 900);
+          })
+           .catch((error) => {
+            showNotice('error', error.message);
+          });
+      }
+
+      initialGames.forEach(upsertGame);
+      sortSelect.addEventListener('change', applySort);
+      pollJob();
+
+      document.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-stream-open]');
+        if (!button) return;
+        activeStreamButton = button;
+        fields.gameId.value = button.dataset.gameId || '';
+        fields.category.value = button.dataset.twitchName || button.dataset.gameName || '';
+        fields.title.value = button.dataset.title || `Playing ${button.dataset.gameName || ''}`;
+        fields.language.value = button.dataset.language || 'en';
+        fields.tags.value = button.dataset.steamTags || button.dataset.tags || '';
+        fields.branded.checked = button.dataset.branded === '1';
+        modal.showModal();
+      });
+
+      document.querySelectorAll('[data-stream-close]').forEach((button) => {
+        button.addEventListener('click', () => modal.close());
+      });
+
+      if (streamForm) {
+        streamForm.addEventListener('submit', (event) => {
+          event.preventDefault();
+          if (streamSubmitButton) {
+            streamSubmitButton.disabled = true;
+            streamSubmitButton.textContent = 'Updating...';
+          }
+
+          fetch(streamForm.action, {
+            method: 'POST',
+            body: new FormData(streamForm),
+            headers: {
+              'Accept': 'application/json',
+              'X-Requested-With': 'fetch'
+            }
+          })
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+              if (!ok || !data.success) {
+                throw new Error(data.message || 'Twitch did not update the stream info.');
+              }
+
+              if (activeStreamButton) {
+                const updatedTags = (data.updates && data.updates.tags ? data.updates.tags : []).join(', ');
+                activeStreamButton.dataset.title = fields.title.value;
+                activeStreamButton.dataset.language = fields.language.value;
+                activeStreamButton.dataset.tags = updatedTags;
+                activeStreamButton.dataset.steamTags = updatedTags;
+                activeStreamButton.dataset.branded = fields.branded.checked ? '1' : '0';
+              }
+
+              modal.close();
+              showNotice('success', data.message || 'Stream info updated.');
+            })
+            .catch((error) => {
+              showNotice('error', error.message);
+            })
+            .finally(() => {
+              if (streamSubmitButton) {
+                streamSubmitButton.disabled = false;
+                streamSubmitButton.textContent = 'Done';
+              }
+            });
+        });
+      }
+    </script>
+  </body>
+</html>

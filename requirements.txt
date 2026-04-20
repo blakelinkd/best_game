@@ -1,0 +1,9 @@
+requests>=2.31.0
+steam[client]>=1.4.4
+vdf>=3.4
+python-dotenv>=1.0.0
+ratelimit>=2.2.1
+tqdm>=4.66.0
+Flask>=3.0.0
+beautifulsoup4>=4.12.0
+playwright>=1.40.0
