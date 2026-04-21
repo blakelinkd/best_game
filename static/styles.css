@@ -300,6 +300,16 @@ button:disabled {
   white-space: nowrap;
 }
 
+.discovery-pill {
+  border-radius: 999px;
+  background: #ff00ff;
+  color: white;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .meta {
   display: flex;
   flex-wrap: wrap;
@@ -570,6 +580,16 @@ button:disabled {
   border-radius: 999px;
   background: rgba(139, 197, 63, 0.16);
   color: var(--green);
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dock-card__discovery {
+  border-radius: 999px;
+  background: #ff00ff;
+  color: white;
   padding: 3px 6px;
   font-size: 11px;
   font-weight: 700;

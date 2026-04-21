@@ -2,7 +2,7 @@ import json
 import os
 import re
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from config import config
@@ -25,6 +25,31 @@ def twitch_safe_tags(values: List[str], limit: int = 10) -> List[str]:
         if len(tags) >= limit:
             break
     return tags
+
+
+def calculate_discovery_score(total_viewers: int, stream_count: int, peak_viewers: int, chat_engagement: float = 0.5) -> float:
+    """
+    Calculate discovery score for a Twitch game.
+    Formula: (viewer_to_streamer_ratio * 0.4) + (category_size_score * 0.3) + 
+             (competition_stability_score * 0.2) + (chat_engagement_score * 0.1)
+    """
+    # Viewer-to-streamer ratio (avoid division by zero)
+    viewer_to_streamer_ratio = total_viewers / max(stream_count, 1)
+    # Normalize ratio (assuming max ratio of 100 = 1.0)
+    ratio_score = min(viewer_to_streamer_ratio / 100, 1.0)
+    
+    # Category size score (using total viewers, normalized by 10,000 viewers = 1.0)
+    category_size_score = min(total_viewers / 10000, 1.0)
+    
+    # Competition stability score (peak viewers vs current)
+    competition_stability_score = total_viewers / max(peak_viewers, 1)
+    
+    # Chat engagement score (default 0.5)
+    chat_engagement_score = chat_engagement
+    
+    discovery_score = (ratio_score * 0.4) + (category_size_score * 0.3) + \
+                      (competition_stability_score * 0.2) + (chat_engagement_score * 0.1)
+    return round(discovery_score, 2)
 
 
 class ViewerService:
@@ -281,25 +306,31 @@ class ViewerService:
         self._cache_twitch_game(appid, twitch_game)
         return twitch_game
 
-    def _get_viewer_count(self, twitch_game_id: str, force_refresh: bool = False) -> int:
+    def _get_viewer_count(self, twitch_game_id: str, force_refresh: bool = False) -> Tuple[int, int]:
         cached = self.cache.get("viewer_counts", {}).get(str(twitch_game_id))
         if (
             not force_refresh
             and isinstance(cached, dict)
             and self._is_fresh(cached.get("cached_at"), config.VIEWER_COUNT_CACHE_TTL)
         ):
-            return int(cached.get("viewer_count", 0))
+            viewer_count = int(cached.get("viewer_count", 0))
+            stream_count = int(cached.get("stream_count", 0))
+            peak_viewer_count = int(cached.get("peak_viewer_count", viewer_count))
+            return viewer_count, stream_count
 
-        viewer_count = self.twitch_client.get_game_viewer_count(twitch_game_id)
+        viewer_count, stream_count = self.twitch_client.get_game_viewer_count(twitch_game_id)
+        peak_viewer_count = viewer_count  # default to current viewers
         self.cache.setdefault("viewer_counts", {})[str(twitch_game_id)] = {
             "cached_at": time.time(),
             "viewer_count": viewer_count,
+            "stream_count": stream_count,
+            "peak_viewer_count": peak_viewer_count,
         }
         self._save_cache()
-        return viewer_count
+        return viewer_count, stream_count
 
-    def _get_viewer_counts(self, twitch_game_ids: List[str], force_refresh: bool = False) -> Dict[str, int]:
-        viewer_counts = {}
+    def _get_viewer_counts(self, twitch_game_ids: List[str], force_refresh: bool = False) -> Dict[str, Tuple[int, int]]:
+        viewer_stream_counts = {}
         stale_ids = []
 
         for twitch_game_id in twitch_game_ids:
@@ -310,7 +341,9 @@ class ViewerService:
                 and isinstance(cached, dict)
                 and self._is_fresh(cached.get("cached_at"), config.VIEWER_COUNT_CACHE_TTL)
             ):
-                viewer_counts[twitch_game_id] = int(cached.get("viewer_count", 0))
+                viewer_count = int(cached.get("viewer_count", 0))
+                stream_count = int(cached.get("stream_count", 0))
+                viewer_stream_counts[twitch_game_id] = (viewer_count, stream_count)
             else:
                 stale_ids.append(twitch_game_id)
 
@@ -325,15 +358,24 @@ class ViewerService:
 
             now = time.time()
             for twitch_game_id in stale_ids:
-                count = int(fresh_counts.get(twitch_game_id, 0))
-                viewer_counts[twitch_game_id] = count
+                fresh_data = fresh_counts.get(twitch_game_id)
+                if isinstance(fresh_data, tuple):
+                    viewer_count, stream_count = fresh_data
+                else:
+                    # fallback: fresh_data is int viewer count (old format)
+                    viewer_count = int(fresh_data or 0)
+                    stream_count = 0
+                peak_viewer_count = viewer_count  # default
+                viewer_stream_counts[twitch_game_id] = (viewer_count, stream_count)
                 self.cache.setdefault("viewer_counts", {})[twitch_game_id] = {
                     "cached_at": now,
-                    "viewer_count": count,
+                    "viewer_count": viewer_count,
+                    "stream_count": stream_count,
+                    "peak_viewer_count": peak_viewer_count,
                 }
             self._save_cache()
 
-        return viewer_counts
+        return viewer_stream_counts
 
     def _get_steam_metadata(self, appid: int, force_refresh: bool = False) -> Dict:
         cached = self.cache.get("steam_metadata", {}).get(str(appid))
@@ -356,7 +398,7 @@ class ViewerService:
         self._save_cache()
         return cached_metadata
 
-    def _build_visible_game(self, game: Dict, twitch_game: Dict, viewer_count: int, force_refresh: bool = False) -> Dict:
+    def _build_visible_game(self, game: Dict, twitch_game: Dict, viewer_count: int, force_refresh: bool = False, stream_count: Optional[int] = None, peak_viewer_count: Optional[int] = None) -> Dict:
         appid = int(game["appid"])
         name = game["name"]
         steam_metadata = self._get_steam_metadata(appid, force_refresh=force_refresh)
@@ -364,11 +406,37 @@ class ViewerService:
         box_art_url = self._twitch_box_art_url(twitch_game.get("box_art_url"))
         steam_tags = twitch_safe_tags(steam_metadata.get("tags", []))
         last_played = int(game.get("last_played") or game.get("rtime_last_played") or 0)
+        
+        # If stream_count or peak_viewer_count not provided, fetch from cache
+        if stream_count is None or peak_viewer_count is None:
+            cached = self.cache.get("viewer_counts", {}).get(str(twitch_game["id"]))
+            if isinstance(cached, dict):
+                if stream_count is None:
+                    stream_count = int(cached.get("stream_count", 0))
+                if peak_viewer_count is None:
+                    peak_viewer_count = int(cached.get("peak_viewer_count", viewer_count))
+            else:
+                if stream_count is None:
+                    stream_count = 0
+                if peak_viewer_count is None:
+                    peak_viewer_count = viewer_count
+        
+        # Calculate discovery score
+        discovery_score = calculate_discovery_score(
+            total_viewers=viewer_count,
+            stream_count=stream_count,
+            peak_viewers=peak_viewer_count,
+            chat_engagement=0.5
+        )
+        
         return {
             "appid": appid,
             "name": name,
             "playtime_hours": round(game.get("playtime_forever", 0) / 60, 1),
             "viewer_count": viewer_count,
+            "stream_count": stream_count,
+            "peak_viewer_count": peak_viewer_count,
+            "discovery_score": discovery_score,
             "twitch_game_id": twitch_game["id"],
             "twitch_name": twitch_name,
             "steam_tags": steam_tags,
@@ -499,11 +567,16 @@ class ViewerService:
             appid = candidate["appid"]
             name = candidate["name"]
             twitch_game = candidate["twitch_game"]
-            viewer_count = viewer_counts.get(str(twitch_game["id"]), 0)
+            viewer_data = viewer_counts.get(str(twitch_game["id"]), (0, 0))
+            if isinstance(viewer_data, tuple):
+                viewer_count, stream_count = viewer_data
+            else:
+                viewer_count = viewer_data
+                stream_count = 0
             if viewer_count <= 0 and not include_zero:
                 continue
 
-            visible_games.append(self._build_visible_game(game, twitch_game, viewer_count, force_refresh=force_refresh))
+            visible_games.append(self._build_visible_game(game, twitch_game, viewer_count, force_refresh=force_refresh, stream_count=stream_count))
 
         visible_games.sort(key=lambda g: g["viewer_count"], reverse=True)
 
@@ -561,13 +634,13 @@ class ViewerService:
 
             matched += 1
             stats["matched"] = matched
-            viewer_count = self._get_viewer_count(twitch_game["id"], force_refresh=force_refresh)
+            viewer_count, stream_count = self._get_viewer_count(twitch_game["id"], force_refresh=force_refresh)
             if viewer_count <= 0 and not include_zero:
                 if on_game:
                     on_game(None, stats)
                 continue
 
-            visible_game = self._build_visible_game(game, twitch_game, viewer_count, force_refresh=force_refresh)
+            visible_game = self._build_visible_game(game, twitch_game, viewer_count, force_refresh=force_refresh, stream_count=stream_count)
             visible_games.append(visible_game)
             stats["shown"] = len(visible_games)
             if on_game:

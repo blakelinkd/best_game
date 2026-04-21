@@ -329,15 +329,15 @@ class TwitchClient:
             return games[0]['id']
         return None
     
-    def get_game_viewer_count(self, game_id: str) -> int:
+    def get_game_viewer_count(self, game_id: str) -> Tuple[int, int]:
         """
-        Get total viewer count for a specific game.
+        Get total viewer count and stream count for a specific game.
         
         Args:
             game_id: Twitch game ID
             
         Returns:
-            Total number of viewers across all streams for this game
+            Tuple of (total_viewers, stream_count) across all streams for this game
         """
         params = {
             'game_id': game_id,
@@ -345,6 +345,7 @@ class TwitchClient:
         }
         
         total_viewers = 0
+        stream_count = 0
         cursor = None
         
         while True:
@@ -355,9 +356,10 @@ class TwitchClient:
             if not data or 'data' not in data:
                 break
             
-            # Sum viewer counts for this page
+            # Sum viewer counts and count streams for this page
             for stream in data['data']:
                 total_viewers += stream.get('viewer_count', 0)
+                stream_count += 1
             
             # Check for more pages
             if 'pagination' in data and 'cursor' in data['pagination']:
@@ -365,15 +367,16 @@ class TwitchClient:
             else:
                 break
         
-        return total_viewers
+        return total_viewers, stream_count
 
-    def get_game_viewer_counts(self, game_ids: List[str]) -> Dict[str, int]:
+    def get_game_viewer_counts(self, game_ids: List[str]) -> Dict[str, Tuple[int, int]]:
         """
-        Get total viewer counts for multiple Twitch categories.
+        Get total viewer counts and stream counts for multiple Twitch categories.
 
         Twitch Helix accepts up to 100 game_id query parameters per streams
         request. The response is paginated across all requested categories, so
         each chunk is paged until exhausted to keep totals exact.
+        Returns a dict mapping game_id to (viewer_count, stream_count).
         """
         unique_ids = []
         seen = set()
@@ -384,6 +387,7 @@ class TwitchClient:
                 seen.add(game_id)
 
         viewer_counts = {game_id: 0 for game_id in unique_ids}
+        stream_counts = {game_id: 0 for game_id in unique_ids}
         chunk_size = 100
 
         for offset in range(0, len(unique_ids), chunk_size):
@@ -404,12 +408,14 @@ class TwitchClient:
                     game_id = str(stream.get("game_id", ""))
                     if game_id in viewer_counts:
                         viewer_counts[game_id] += int(stream.get("viewer_count", 0) or 0)
+                        stream_counts[game_id] += 1
 
                 cursor = data.get("pagination", {}).get("cursor")
                 if not cursor:
                     break
 
-        return viewer_counts
+        # Combine into tuples
+        return {game_id: (viewer_counts[game_id], stream_counts[game_id]) for game_id in unique_ids}
     
     def get_top_games(self, limit: int = 100) -> List[Dict]:
         """

@@ -20,6 +20,7 @@
               <option value="recent">Recently played</option>
               <option value="installed">Installed</option>
               <option value="viewers">Viewer count</option>
+              <option value="discovery">Discovery score</option>
             </select>
           </label>
           <label class="toggle">
@@ -182,6 +183,7 @@
       const streamSubmitButton = document.getElementById('stream-submit-button');
       const noticeRegion = document.getElementById('notice-region');
       const cardsByAppid = new Map();
+      const allGamesByAppid = new Map();
       let activeStreamButton = null;
       let pollOffset = 0;
       const fields = {
@@ -232,13 +234,14 @@
         container.appendChild(item);
       }
 
-      function createCard(game) {
-        const article = document.createElement('article');
-        article.className = 'game-card';
-        article.dataset.appid = game.appid;
-        article.dataset.viewerCount = game.viewer_count || 0;
-        article.dataset.lastPlayed = game.last_played || 0;
-        article.dataset.installed = game.installed ? '1' : '0';
+       function createCard(game) {
+         const article = document.createElement('article');
+         article.className = 'game-card';
+         article.dataset.appid = game.appid;
+         article.dataset.viewerCount = game.viewer_count || 0;
+         article.dataset.lastPlayed = game.last_played || 0;
+         article.dataset.installed = game.installed ? '1' : '0';
+         article.dataset.discoveryScore = game.discovery_score || 0;
 
         const imageWrap = document.createElement('div');
         imageWrap.className = 'game-card__image';
@@ -251,14 +254,17 @@
         const body = document.createElement('div');
         body.className = 'game-card__body';
 
-        const heading = document.createElement('div');
-        heading.className = 'game-card__heading';
-        const title = document.createElement('h2');
-        title.textContent = game.name;
-        const viewerPill = document.createElement('span');
-        viewerPill.className = 'viewer-pill';
-        viewerPill.textContent = compactNumber(game.viewer_count);
-        heading.append(title, viewerPill);
+         const heading = document.createElement('div');
+         heading.className = 'game-card__heading';
+         const title = document.createElement('h2');
+         title.textContent = game.name;
+         const viewerPill = document.createElement('span');
+         viewerPill.className = 'viewer-pill';
+         viewerPill.textContent = compactNumber(game.viewer_count);
+         const discoveryPill = document.createElement('span');
+         discoveryPill.className = 'discovery-pill';
+         discoveryPill.textContent = 'Discovery: ' + (game.discovery_score || 0).toFixed(1);
+         heading.append(title, viewerPill, discoveryPill);
 
         const meta = document.createElement('div');
         meta.className = 'meta';
@@ -319,25 +325,142 @@
         return article;
       }
 
-      function applySort() {
-        const cards = Array.from(cardsByAppid.values());
-        const mode = sortSelect.value;
-        cards.sort((a, b) => {
-          if (mode === 'viewers') {
-            return Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
+        function applySort() {
+          const cards = Array.from(cardsByAppid.values());
+          const mode = sortSelect.value;
+          cards.sort((a, b) => {
+            if (mode === 'viewers') {
+              return Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
+            }
+            if (mode === 'installed') {
+              return Number(b.dataset.installed) - Number(a.dataset.installed)
+                || Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed);
+            }
+            if (mode === 'discovery') {
+              return Number(b.dataset.discoveryScore) - Number(a.dataset.discoveryScore);
+            }
+            return Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed)
+              || Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
+          });
+          cards.forEach((card) => library.appendChild(card));
+        }
+
+        function populateDock(games) {
+          const dockCards = document.getElementById('dock-cards');
+          if (!dockCards) return;
+          
+          // Clear existing dock cards
+          dockCards.innerHTML = '';
+          
+          // Sort by last_played descending, filter out never played (last_played === 0)
+          const recentGames = games
+            .filter(game => game.last_played && game.last_played > 0)
+            .sort((a, b) => b.last_played - a.last_played)
+            .slice(0, 5); // Top 5 recently played
+          
+          if (recentGames.length === 0) {
+            const empty = document.createElement('p');
+            empty.textContent = 'No recently played games';
+            empty.style.color = 'var(--muted)';
+            empty.style.fontSize = '13px';
+            empty.style.textAlign = 'center';
+            empty.style.padding = '16px';
+            dockCards.appendChild(empty);
+            return;
           }
-          if (mode === 'installed') {
-            return Number(b.dataset.installed) - Number(a.dataset.installed)
-              || Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed);
+          
+          recentGames.forEach(game => {
+            const card = createDockCard(game);
+            dockCards.appendChild(card);
+          });
+        }
+
+        function updateDock() {
+          populateDock(Array.from(allGamesByAppid.values()));
+        }
+
+        function createDockCard(game) {
+          const article = document.createElement('article');
+          article.className = 'dock-card';
+          article.dataset.appid = game.appid;
+          
+          // Image
+          const imageWrap = document.createElement('div');
+          imageWrap.className = 'dock-card__image';
+          const image = document.createElement('img');
+          image.src = game.steam_header_url;
+          image.alt = `${game.name} Steam header`;
+          image.loading = 'lazy';
+          imageWrap.appendChild(image);
+          
+          const body = document.createElement('div');
+          body.className = 'dock-card__body';
+          
+          const heading = document.createElement('div');
+          heading.className = 'dock-card__heading';
+          
+          const title = document.createElement('h3');
+          title.className = 'dock-card__title';
+          title.textContent = game.name;
+          
+          const viewerPill = document.createElement('span');
+          viewerPill.className = 'dock-card__viewer';
+          viewerPill.textContent = compactNumber(game.viewer_count);
+          
+          const discoveryPill = document.createElement('span');
+          discoveryPill.className = 'dock-card__discovery';
+          discoveryPill.textContent = 'Discovery: ' + (game.discovery_score || 0).toFixed(1);
+          
+          heading.append(title, viewerPill, discoveryPill);
+          
+          const meta = document.createElement('div');
+          meta.className = 'dock-card__meta';
+          const lastPlayed = document.createElement('span');
+          lastPlayed.textContent = 'Last played: ' + timestampLabel(game.last_played);
+          const playtime = document.createElement('span');
+          if (game.playtime_hours > 0) {
+            playtime.textContent = game.playtime_hours + ' hours';
+            meta.appendChild(playtime);
           }
-          return Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed)
-            || Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
-        });
-        cards.forEach((card) => library.appendChild(card));
-      }
+          meta.appendChild(lastPlayed);
+          
+          const buttons = document.createElement('div');
+          buttons.className = 'dock-card__buttons';
+          
+          const launchButton = document.createElement('button');
+          launchButton.type = 'button';
+          launchButton.className = 'launch-button';
+          launchButton.textContent = 'Launch';
+          launchButton.title = 'Launch game via Steam client';
+          launchButton.addEventListener('click', () => {
+            window.location.href = `steam://run/${game.appid}`;
+          });
+          
+          const streamButton = document.createElement('button');
+          streamButton.type = 'button';
+          streamButton.className = 'stream-button';
+          streamButton.textContent = 'Update stream';
+          streamButton.dataset.streamOpen = '1';
+          streamButton.dataset.gameName = game.name || '';
+          streamButton.dataset.twitchName = game.twitch_name || '';
+          streamButton.dataset.gameId = game.twitch_game_id || '';
+          streamButton.dataset.title = channelInfo.title || `Playing ${game.name || ''}`;
+          streamButton.dataset.language = channelInfo.broadcaster_language || 'en';
+          streamButton.dataset.tags = (channelInfo.tags || []).join(', ');
+          streamButton.dataset.steamTags = (game.steam_tags || []).join(', ');
+          streamButton.dataset.steamDescription = game.steam_short_description || '';
+          streamButton.dataset.branded = channelInfo.is_branded_content ? '1' : '0';
+          streamButton.disabled = !canUpdateStream;
+          
+          buttons.append(launchButton, streamButton);
+          body.append(heading, meta, buttons);
+          article.append(imageWrap, body);
+          return article;
+        }
 
        function upsertGame(game) {
         if (!game || !game.appid || cardsByAppid.has(String(game.appid))) return;
+        allGamesByAppid.set(String(game.appid), game);
         const card = createCard(game);
         cardsByAppid.set(String(game.appid), card);
         library.appendChild(card);
@@ -354,7 +477,8 @@
 
             (data.games || []).forEach(upsertGame);
             pollOffset = Number(data.next_offset) || pollOffset;
-            updateStats(data.stats);
+             updateStats(data.stats);
+             updateDock();
 
             if (data.status === 'done') {
               const cacheNote = document.querySelector('.cache-note');
@@ -373,6 +497,7 @@
       }
 
       initialGames.forEach(upsertGame);
+      updateDock();
       sortSelect.addEventListener('change', applySort);
       pollJob();
 
