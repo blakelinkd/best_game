@@ -1,18 +1,23 @@
 import json
 import os
 import time
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Set
 import requests
 from ratelimit import limits, sleep_and_retry
 from steam.webauth import WebAuth
 from config import config
+from platform_client import PlatformClient, RateLimitedClientMixin
 
 
-class SteamClient:
+class SteamClient(PlatformClient, RateLimitedClientMixin):
     """Client for interacting with Steam APIs"""
 
     OWNED_GAMES_URL = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
     STORE_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
+    
+    @property
+    def platform_name(self) -> str:
+        return "steam"
     
     def __init__(self, api_key: Optional[str] = None, username: Optional[str] = None, 
                  password: Optional[str] = None):
@@ -152,10 +157,13 @@ class SteamClient:
             print(f"Error fetching owned games via WebAuth: {e}")
             return []
     
-    def get_owned_games(self) -> List[Dict]:
+    def get_owned_games(self, force_refresh: bool = False) -> List[Dict]:
         """
         Get owned games using available methods.
         Tries Steam Web API first, then WebAuth if available.
+        
+        Args:
+            force_refresh: Ignored for Steam API (always fetches fresh)
         
         Returns:
             List of game dictionaries with at least appid and name
@@ -186,9 +194,9 @@ class SteamClient:
         
         return games
 
-    def get_installed_appids(self) -> set:
+    def get_installed_appids(self) -> Set[str]:
         """Return app IDs installed in any local Steam library folder."""
-        installed = set()
+        installed: Set[str] = set()
         try:
             import vdf
 
@@ -205,7 +213,7 @@ class SteamClient:
                     continue
                 for appid in (folder.get("apps") or {}).keys():
                     try:
-                        installed.add(int(appid))
+                        installed.add(str(int(appid)))
                     except (TypeError, ValueError):
                         continue
         except Exception as e:
@@ -223,20 +231,16 @@ class SteamClient:
         seen_appids = set()
 
         for game in games or []:
-            appid = game.get('appid') or game.get('app_id') or game.get('appID')
-            name = game.get('name') or game.get('title')
-
-            try:
-                appid = int(appid)
-            except (TypeError, ValueError):
+            # Use parent class normalization which adds platform field
+            normalized_game = self._normalize_game(game, default_name_prefix="App_")
+            if not normalized_game:
                 continue
-
-            if not name or appid in seen_appids:
+            
+            # Ensure appid is string for consistency
+            appid = normalized_game['appid']
+            if appid in seen_appids:
                 continue
-
-            normalized_game = dict(game)
-            normalized_game['appid'] = appid
-            normalized_game['name'] = str(name).strip()
+            
             normalized.append(normalized_game)
             seen_appids.add(appid)
 
@@ -399,6 +403,22 @@ class SteamClient:
         
         return game_names
     
+    def get_image_url(self, appid: str) -> Optional[str]:
+        """
+        Get Steam header image URL for a game.
+        
+        Args:
+            appid: Steam app ID
+            
+        Returns:
+            URL to Steam header image
+        """
+        try:
+            appid_int = int(appid)
+            return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid_int}/header.jpg"
+        except (TypeError, ValueError):
+            return None
+     
     def test_connection(self) -> bool:
         """Test if we can connect to Steam APIs"""
         try:

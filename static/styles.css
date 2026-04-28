@@ -290,10 +290,27 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.pill-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
 .viewer-pill {
   border-radius: 999px;
   background: rgba(139, 197, 63, 0.16);
   color: var(--green);
+  padding: 5px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.stream-pill {
+  border-radius: 999px;
+  background: rgba(102, 192, 244, 0.16);
+  color: var(--accent);
   padding: 5px 8px;
   font-size: 13px;
   font-weight: 700;
@@ -576,10 +593,27 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
+.dock-card__pills {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-end;
+}
+
 .dock-card__viewer {
   border-radius: 999px;
   background: rgba(139, 197, 63, 0.16);
   color: var(--green);
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dock-card__stream {
+  border-radius: 999px;
+  background: rgba(102, 192, 244, 0.16);
+  color: var(--accent);
   padding: 3px 6px;
   font-size: 11px;
   font-weight: 700;
@@ -668,4 +702,27 @@ button:disabled {
   .library {
     grid-template-columns: 1fr;
   }
+}
+
+/* Platform badges */
+.platform-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: white;
+}
+
+.platform-badge-steam {
+  background-color: #1A1A1A;
+}
+
+.platform-badge-gog {
+  background-color: #863B8C;
+}
+
+.platform-badge-epic {
+  background-color: #2A2A2A;
 }

@@ -17,10 +17,10 @@
           <label class="field">
             <span>Sort</span>
             <select id="sort-select" name="sort">
+              <option value="discovery" selected>Discovery score</option>
               <option value="recent">Recently played</option>
               <option value="installed">Installed</option>
               <option value="viewers">Viewer count</option>
-              <option value="discovery">Discovery score</option>
             </select>
           </label>
           <label class="toggle">
@@ -243,28 +243,49 @@
          article.dataset.installed = game.installed ? '1' : '0';
          article.dataset.discoveryScore = game.discovery_score || 0;
 
-        const imageWrap = document.createElement('div');
+         const imageWrap = document.createElement('div');
         imageWrap.className = 'game-card__image';
         const image = document.createElement('img');
-        image.src = game.steam_header_url;
-        image.alt = `${game.name} Steam header`;
+        image.src = game.platform_image_url || game.steam_header_url;
+        image.alt = `${game.name} ${game.platform || 'Steam'} header`;
         image.loading = 'lazy';
         imageWrap.appendChild(image);
 
         const body = document.createElement('div');
         body.className = 'game-card__body';
 
-         const heading = document.createElement('div');
-         heading.className = 'game-card__heading';
-         const title = document.createElement('h2');
-         title.textContent = game.name;
-         const viewerPill = document.createElement('span');
-         viewerPill.className = 'viewer-pill';
-         viewerPill.textContent = compactNumber(game.viewer_count);
-         const discoveryPill = document.createElement('span');
-         discoveryPill.className = 'discovery-pill';
-         discoveryPill.textContent = 'Discovery: ' + (game.discovery_score || 0).toFixed(1);
-         heading.append(title, viewerPill, discoveryPill);
+          const heading = document.createElement('div');
+          heading.className = 'game-card__heading';
+          const titleRow = document.createElement('div');
+          titleRow.style.display = 'flex';
+          titleRow.style.alignItems = 'center';
+          titleRow.style.gap = '8px';
+          const title = document.createElement('h2');
+          title.textContent = game.name;
+          // Platform badge
+          if (game.platform && game.platform !== 'steam') {
+            const platformBadge = document.createElement('span');
+            platformBadge.className = `platform-badge platform-badge-${game.platform}`;
+            platformBadge.textContent = game.platform.toUpperCase();
+            titleRow.append(title, platformBadge);
+          } else {
+            titleRow.appendChild(title);
+          }
+          const pillStack = document.createElement('div');
+          pillStack.className = 'pill-stack';
+          const viewerPill = document.createElement('span');
+          viewerPill.className = 'viewer-pill';
+          viewerPill.textContent = compactNumber(game.viewer_count) + ' viewers';
+          viewerPill.title = (game.viewer_count || 0) + ' live viewers';
+          const streamPill = document.createElement('span');
+          streamPill.className = 'stream-pill';
+          streamPill.textContent = compactNumber(game.stream_count) + ' streamers';
+          streamPill.title = (game.stream_count || 0) + ' active streams';
+          const discoveryPill = document.createElement('span');
+          discoveryPill.className = 'discovery-pill';
+          discoveryPill.textContent = 'Discovery: ' + (game.discovery_score || 0).toFixed(2);
+          pillStack.append(viewerPill, streamPill, discoveryPill);
+          heading.append(titleRow, pillStack);
 
         const meta = document.createElement('div');
         meta.className = 'meta';
@@ -281,28 +302,34 @@
           body.appendChild(match);
         }
 
-        const links = document.createElement('div');
+         const links = document.createElement('div');
         links.className = 'links';
-        const steamLink = document.createElement('a');
-        steamLink.href = game.steam_url;
-        steamLink.target = '_blank';
-        steamLink.rel = 'noreferrer';
-        steamLink.textContent = 'Steam';
+        const platformLink = document.createElement('a');
+        platformLink.href = game.platform_url || game.steam_url;
+        platformLink.target = '_blank';
+        platformLink.rel = 'noreferrer';
+        platformLink.textContent = game.platform === 'gog' ? 'GOG' : 
+                                  game.platform === 'epic' ? 'Epic' : 'Steam';
         const twitchLink = document.createElement('a');
         twitchLink.href = game.twitch_url;
         twitchLink.target = '_blank';
         twitchLink.rel = 'noreferrer';
         twitchLink.textContent = 'Twitch';
-        links.append(steamLink, twitchLink);
+        links.append(platformLink, twitchLink);
 
-        const launchButton = document.createElement('button');
+         const launchButton = document.createElement('button');
         launchButton.type = 'button';
         launchButton.className = 'launch-button';
-        launchButton.textContent = 'Launch Game';
-        launchButton.title = 'Launch game via Steam client';
-        launchButton.addEventListener('click', () => {
-          window.location.href = `steam://run/${game.appid}`;
-        });
+        launchButton.textContent = game.platform === 'steam' ? 'Launch Game' : 'Play Game';
+        launchButton.title = game.platform === 'steam' ? 'Launch game via Steam client' : 'Play game';
+        if (game.platform === 'steam') {
+          launchButton.addEventListener('click', () => {
+            window.location.href = `steam://run/${game.appid}`;
+          });
+        } else {
+          launchButton.disabled = true;
+          launchButton.title = 'Launch not supported for this platform';
+        }
 
         const streamButton = document.createElement('button');
         streamButton.type = 'button';
@@ -317,6 +344,9 @@
         streamButton.dataset.tags = (channelInfo.tags || []).join(', ');
         streamButton.dataset.steamTags = (game.steam_tags || []).join(', ');
         streamButton.dataset.steamDescription = game.steam_short_description || '';
+        // Platform-specific fields
+        streamButton.dataset.platformTags = (game.platform_tags || game.steam_tags || []).join(', ');
+        streamButton.dataset.platformDescription = game.platform_short_description || game.steam_short_description || '';
         streamButton.dataset.branded = channelInfo.is_branded_content ? '1' : '0';
         streamButton.disabled = !canUpdateStream;
 
@@ -385,11 +415,11 @@
           article.dataset.appid = game.appid;
           
           // Image
-          const imageWrap = document.createElement('div');
+           const imageWrap = document.createElement('div');
           imageWrap.className = 'dock-card__image';
           const image = document.createElement('img');
-          image.src = game.steam_header_url;
-          image.alt = `${game.name} Steam header`;
+          image.src = game.platform_image_url || game.steam_header_url;
+          image.alt = `${game.name} ${game.platform || 'Steam'} header`;
           image.loading = 'lazy';
           imageWrap.appendChild(image);
           
@@ -403,15 +433,25 @@
           title.className = 'dock-card__title';
           title.textContent = game.name;
           
+          const dockPills = document.createElement('div');
+          dockPills.className = 'dock-card__pills';
+
           const viewerPill = document.createElement('span');
           viewerPill.className = 'dock-card__viewer';
-          viewerPill.textContent = compactNumber(game.viewer_count);
-          
+          viewerPill.textContent = compactNumber(game.viewer_count) + ' v';
+          viewerPill.title = (game.viewer_count || 0) + ' live viewers';
+
+          const streamPill = document.createElement('span');
+          streamPill.className = 'dock-card__stream';
+          streamPill.textContent = compactNumber(game.stream_count) + ' s';
+          streamPill.title = (game.stream_count || 0) + ' active streams';
+
           const discoveryPill = document.createElement('span');
           discoveryPill.className = 'dock-card__discovery';
-          discoveryPill.textContent = 'Discovery: ' + (game.discovery_score || 0).toFixed(1);
-          
-          heading.append(title, viewerPill, discoveryPill);
+          discoveryPill.textContent = 'D: ' + (game.discovery_score || 0).toFixed(2);
+
+          dockPills.append(viewerPill, streamPill, discoveryPill);
+          heading.append(title, dockPills);
           
           const meta = document.createElement('div');
           meta.className = 'dock-card__meta';
@@ -449,6 +489,9 @@
           streamButton.dataset.tags = (channelInfo.tags || []).join(', ');
           streamButton.dataset.steamTags = (game.steam_tags || []).join(', ');
           streamButton.dataset.steamDescription = game.steam_short_description || '';
+          // Platform-specific fields
+          streamButton.dataset.platformTags = (game.platform_tags || game.steam_tags || []).join(', ');
+          streamButton.dataset.platformDescription = game.platform_short_description || game.steam_short_description || '';
           streamButton.dataset.branded = channelInfo.is_branded_content ? '1' : '0';
           streamButton.disabled = !canUpdateStream;
           
@@ -509,7 +552,7 @@
         fields.category.value = button.dataset.twitchName || button.dataset.gameName || '';
         fields.title.value = button.dataset.title || `Playing ${button.dataset.gameName || ''}`;
         fields.language.value = button.dataset.language || 'en';
-        fields.tags.value = button.dataset.steamTags || button.dataset.tags || '';
+         fields.tags.value = button.dataset.platformTags || button.dataset.steamTags || button.dataset.tags || '';
         fields.branded.checked = button.dataset.branded === '1';
         modal.showModal();
       });
@@ -545,7 +588,8 @@
                 activeStreamButton.dataset.title = fields.title.value;
                 activeStreamButton.dataset.language = fields.language.value;
                 activeStreamButton.dataset.tags = updatedTags;
-                activeStreamButton.dataset.steamTags = updatedTags;
+                 activeStreamButton.dataset.steamTags = updatedTags;
+                 activeStreamButton.dataset.platformTags = updatedTags;
                 activeStreamButton.dataset.branded = fields.branded.checked ? '1' : '0';
               }
 
@@ -571,9 +615,13 @@
           if (!activeStreamButton) return;
           
           const gameName = activeStreamButton.dataset.gameName || '';
-          const steamTagsRaw = activeStreamButton.dataset.steamTags || '';
+           const steamTagsRaw = activeStreamButton.dataset.steamTags || '';
           const steamTags = steamTagsRaw.split(',').map(t => t.trim()).filter(Boolean);
           const gameDescription = activeStreamButton.dataset.steamDescription || '';
+          // Use platform tags if available
+          const platformTagsRaw = activeStreamButton.dataset.platformTags || '';
+          const platformTags = platformTagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+          const platformDescription = activeStreamButton.dataset.platformDescription || '';
           
           const button = aiTagsButton;
           const originalText = button.textContent;
@@ -586,10 +634,10 @@
               'Content-Type': 'application/json',
               'Accept': 'application/json'
             },
-            body: JSON.stringify({
+             body: JSON.stringify({
               game_name: gameName,
-              steam_tags: steamTags,
-              game_description: gameDescription
+              steam_tags: platformTags.length > 0 ? platformTags : steamTags,
+              game_description: platformDescription || gameDescription
             })
           })
             .then(response => response.json())

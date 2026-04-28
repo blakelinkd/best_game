@@ -22,6 +22,24 @@ class Config:
     # Leave disabled so the dashboard is based on the Steam owned-games API.
     ALLOW_LOCAL_APP_FALLBACK = os.getenv('ALLOW_LOCAL_APP_FALLBACK', '').lower() in ('1', 'true', 'yes', 'on')
     
+    # Multi-platform configuration
+    ENABLED_PLATFORMS = os.getenv('ENABLED_PLATFORMS', 'steam,gog,epic').lower().split(',')
+    
+    @property
+    def GOG_ENABLED(self) -> bool:
+        return 'gog' in self.ENABLED_PLATFORMS
+    
+    @property
+    def EPIC_ENABLED(self) -> bool:
+        return 'epic' in self.ENABLED_PLATFORMS
+    
+    # GOG Galaxy configuration
+    GOG_DB_PATH = os.getenv('GOG_DB_PATH', '')  # Optional override
+    
+    # Epic Games configuration
+    EPIC_CATALOG_PATH = os.getenv('EPIC_CATALOG_PATH', '')  # Optional override
+    EPIC_INSTALLS_PATH = os.getenv('EPIC_INSTALLS_PATH', '')  # Optional override
+    
     # Steam ID conversion constants
     STEAMID64_BASE = 76561197960265728
     

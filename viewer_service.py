@@ -2,12 +2,15 @@ import json
 import os
 import re
 import time
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote
 
 from config import config
 from steam_client import SteamClient
 from twitch_client import TwitchClient
+from platform_client import PlatformClient
+from gog_client import GogClient
+from epic_client import EpicClient
 
 _job_progress = {}
 
@@ -27,29 +30,30 @@ def twitch_safe_tags(values: List[str], limit: int = 10) -> List[str]:
     return tags
 
 
-def calculate_discovery_score(total_viewers: int, stream_count: int, peak_viewers: int, chat_engagement: float = 0.5) -> float:
+def calculate_discovery_score(viewer_count: int, stream_count: int) -> float:
     """
-    Calculate discovery score for a Twitch game.
-    Formula: (viewer_to_streamer_ratio * 0.4) + (category_size_score * 0.3) + 
-             (competition_stability_score * 0.2) + (chat_engagement_score * 0.1)
+    Score a Twitch category by how discoverable it is for a small streamer.
+
+    Optimized for streamers trying to grow from a few viewers — favors categories
+    where they can land near the top of the directory and where there's enough
+    audience that a click-through is plausible.
     """
-    # Viewer-to-streamer ratio (avoid division by zero)
-    viewer_to_streamer_ratio = total_viewers / max(stream_count, 1)
-    # Normalize ratio (assuming max ratio of 100 = 1.0)
-    ratio_score = min(viewer_to_streamer_ratio / 100, 1.0)
-    
-    # Category size score (using total viewers, normalized by 10,000 viewers = 1.0)
-    category_size_score = min(total_viewers / 10000, 1.0)
-    
-    # Competition stability score (peak viewers vs current)
-    competition_stability_score = total_viewers / max(peak_viewers, 1)
-    
-    # Chat engagement score (default 0.5)
-    chat_engagement_score = chat_engagement
-    
-    discovery_score = (ratio_score * 0.4) + (category_size_score * 0.3) + \
-                      (competition_stability_score * 0.2) + (chat_engagement_score * 0.1)
-    return round(discovery_score, 2)
+    # Discoverability: full credit at <=20 active streams (you're on page 1),
+    # decays to 0 by ~100 streams (effectively invisible to a casual browser).
+    if stream_count <= 20:
+        discoverability = 1.0
+    else:
+        discoverability = max(0.0, 1.0 - (stream_count - 20) / 80)
+
+    # Demand: viewers per stream. 5+ viewers/stream is the target.
+    viewers_per_stream = viewer_count / max(stream_count, 1)
+    demand = min(viewers_per_stream / 5, 1.0)
+
+    # Audience floor: zero out totally dead categories.
+    audience_floor = 1.0 if viewer_count >= 3 else 0.0
+
+    score = discoverability * 0.5 + demand * 0.4 + audience_floor * 0.1
+    return round(score, 3)
 
 
 class ViewerService:
@@ -57,13 +61,13 @@ class ViewerService:
 
     def __init__(
         self,
-        steam_client: Optional[SteamClient] = None,
+        platform_clients: Optional[List[PlatformClient]] = None,
         twitch_client: Optional[TwitchClient] = None,
         cache_file: Optional[str] = None,
         legacy_cache_file: str = "game_cache.json",
         asset_cache_dir: Optional[str] = None,
     ):
-        self._steam_client = steam_client
+        self._platform_clients = platform_clients or self._default_platform_clients()
         self._twitch_client = twitch_client
         self.project_root = os.path.dirname(os.path.abspath(__file__))
         self.cache_file = cache_file or os.path.join(config.CACHE_DIR, "viewer_cache.json")
@@ -72,17 +76,42 @@ class ViewerService:
         self.cache = self._load_cache()
         self.legacy_game_cache = self._load_legacy_game_cache()
 
+    def _default_platform_clients(self) -> List[PlatformClient]:
+        """Create default platform clients based on configuration."""
+        clients: List[PlatformClient] = []
+        
+        # Always include Steam client for backward compatibility
+        clients.append(SteamClient())
+        
+        # Add GOG client if enabled
+        if config.GOG_ENABLED:
+            clients.append(GogClient(db_path=config.GOG_DB_PATH))
+        
+        # Add Epic client if enabled
+        if config.EPIC_ENABLED:
+            clients.append(EpicClient(
+                catalog_path=config.EPIC_CATALOG_PATH,
+                installs_path=config.EPIC_INSTALLS_PATH
+            ))
+        
+        return clients
+
     @property
-    def steam_client(self) -> SteamClient:
-        if self._steam_client is None:
-            self._steam_client = SteamClient()
-        return self._steam_client
+    def platform_clients(self) -> List[PlatformClient]:
+        return self._platform_clients
 
     @property
     def twitch_client(self) -> TwitchClient:
         if self._twitch_client is None:
             self._twitch_client = TwitchClient()
         return self._twitch_client
+
+    @property
+    def steam_client(self):
+        for c in self._platform_clients:
+            if c.platform_name == "steam":
+                return c
+        return self._platform_clients[0] if self._platform_clients else None
 
     def _absolute_path(self, path: str) -> str:
         if os.path.isabs(path):
@@ -135,11 +164,11 @@ class ViewerService:
             return False
         return time.time() - cached_at < ttl
 
-    def _legacy_cache_key(self, appid: int, steam_name: str) -> str:
-        return f"{appid}_{steam_name}"
+    def _legacy_cache_key(self, appid: str, game_name: str, platform: str = "steam") -> str:
+        return f"{platform}_{appid}_{game_name}"
 
-    def _twitch_cache_key(self, appid: int) -> str:
-        return str(appid)
+    def _twitch_cache_key(self, appid: str, platform: str = "steam") -> str:
+        return f"{platform}_{appid}"
 
     def _get_owned_games(self, force_refresh: bool = False) -> List[Dict]:
         cached = self.cache.get("owned_games")
@@ -150,7 +179,15 @@ class ViewerService:
         ):
             return cached.get("games", [])
 
-        owned_games = self.steam_client.get_owned_games()
+        owned_games = []
+        for client in self.platform_clients:
+            try:
+                platform_games = client.get_owned_games(force_refresh=force_refresh)
+                owned_games.extend(platform_games)
+                print(f"Found {len(platform_games)} games from {client.platform_name}")
+            except Exception as e:
+                print(f"Error fetching games from {client.platform_name}: {e}")
+        
         self.cache["owned_games"] = {
             "cached_at": time.time(),
             "games": owned_games,
@@ -160,20 +197,28 @@ class ViewerService:
 
     def _ordered_owned_games(self, force_refresh: bool = False) -> List[Dict]:
         owned_games = list(self._get_owned_games(force_refresh=force_refresh))
-        installed_appids = (
-            self.steam_client.get_installed_appids()
-            if hasattr(self.steam_client, "get_installed_appids")
-            else set()
-        )
+        
+        # Get installed app IDs from each platform client
+        platform_installed: Dict[str, Set[str]] = {}
+        for client in self.platform_clients:
+            try:
+                installed = client.get_installed_appids()
+                platform_installed[client.platform_name] = installed
+            except Exception as e:
+                print(f"Error getting installed apps from {client.platform_name}: {e}")
+                platform_installed[client.platform_name] = set()
 
         for game in owned_games:
-            try:
-                appid = int(game.get("appid"))
-            except (TypeError, ValueError):
-                appid = 0
-            game["installed"] = appid in installed_appids
-            game["last_played"] = int(game.get("rtime_last_played") or 0)
+            platform = game.get("platform", "steam")
+            appid = game.get("appid", "")
+            
+            # Check if installed on its platform
+            game["installed"] = appid in platform_installed.get(platform, set())
+            
+            # Convert last_played to int
+            game["last_played"] = int(game.get("rtime_last_played") or game.get("last_played") or 0)
 
+        # Sort by last played (most recent first), then playtime, then name
         owned_games.sort(
             key=lambda game: (
                 int(game.get("last_played") or 0),
@@ -199,17 +244,13 @@ class ViewerService:
         for game in owned_games:
             appid = game.get("appid")
             name = game.get("name")
+            platform = game.get("platform", "steam")
             if not appid or not name:
                 continue
 
-            try:
-                appid = int(appid)
-            except (TypeError, ValueError):
-                continue
-
-            twitch_game = self._get_cached_twitch_game(appid, name)
+            twitch_game = self._get_cached_twitch_game(appid, name, platform)
             if not twitch_game or not twitch_game.get("id"):
-                if not self._has_cached_missing_twitch_game(appid):
+                if not self._has_cached_missing_twitch_game(appid, platform):
                     return False
                 continue
 
@@ -230,26 +271,26 @@ class ViewerService:
 
         return True
 
-    def _get_cached_twitch_game(self, appid: int, steam_name: str) -> Optional[Dict]:
-        cached = self.cache.get("twitch_games", {}).get(self._twitch_cache_key(appid))
+    def _get_cached_twitch_game(self, appid: str, game_name: str, platform: str = "steam") -> Optional[Dict]:
+        cached = self.cache.get("twitch_games", {}).get(self._twitch_cache_key(appid, platform))
         if isinstance(cached, dict):
             return cached
 
-        legacy = self.legacy_game_cache.get(self._legacy_cache_key(appid, steam_name))
+        legacy = self.legacy_game_cache.get(self._legacy_cache_key(appid, game_name, platform))
         if isinstance(legacy, dict):
-            self._cache_twitch_game(appid, legacy)
+            self._cache_twitch_game(appid, legacy, platform)
             return legacy
         if isinstance(legacy, str) and legacy:
             migrated = {"name": legacy}
-            self._cache_twitch_game(appid, migrated)
+            self._cache_twitch_game(appid, migrated, platform)
             return migrated
         return None
 
-    def _has_cached_missing_twitch_game(self, appid: int) -> bool:
-        return self._twitch_cache_key(appid) in self.cache.get("missing_twitch_games", {})
+    def _has_cached_missing_twitch_game(self, appid: str, platform: str = "steam") -> bool:
+        return self._twitch_cache_key(appid, platform) in self.cache.get("missing_twitch_games", {})
 
-    def _cache_twitch_game(self, appid: int, twitch_game: Optional[Dict]):
-        key = self._twitch_cache_key(appid)
+    def _cache_twitch_game(self, appid: str, twitch_game: Optional[Dict], platform: str = "steam"):
+        key = self._twitch_cache_key(appid, platform)
         if twitch_game:
             self.cache.setdefault("twitch_games", {})[key] = {
                 "id": twitch_game.get("id"),
@@ -290,20 +331,21 @@ class ViewerService:
 
         return None
 
-    def _find_twitch_game(self, steam_game: Dict, force_refresh: bool = False) -> Optional[Dict]:
-        appid = int(steam_game["appid"])
-        steam_name = steam_game["name"]
+    def _find_twitch_game(self, game: Dict, force_refresh: bool = False) -> Optional[Dict]:
+        appid = game["appid"]
+        game_name = game["name"]
+        platform = game.get("platform", "steam")
 
         if not force_refresh:
-            cached = self._get_cached_twitch_game(appid, steam_name)
+            cached = self._get_cached_twitch_game(appid, game_name, platform)
             if cached and cached.get("id"):
                 return cached
-            if self._has_cached_missing_twitch_game(appid):
+            if self._has_cached_missing_twitch_game(appid, platform):
                 return None
 
-        twitch_games = self.twitch_client.search_games(steam_name)
-        twitch_game = self._match_twitch_game(steam_name, twitch_games)
-        self._cache_twitch_game(appid, twitch_game)
+        twitch_games = self.twitch_client.search_games(game_name)
+        twitch_game = self._match_twitch_game(game_name, twitch_games)
+        self._cache_twitch_game(appid, twitch_game, platform)
         return twitch_game
 
     def _get_viewer_count(self, twitch_game_id: str, force_refresh: bool = False) -> Tuple[int, int]:
@@ -377,8 +419,9 @@ class ViewerService:
 
         return viewer_stream_counts
 
-    def _get_steam_metadata(self, appid: int, force_refresh: bool = False) -> Dict:
-        cached = self.cache.get("steam_metadata", {}).get(str(appid))
+    def _get_platform_metadata(self, appid: str, platform: str = "steam", force_refresh: bool = False) -> Dict:
+        cache_key = f"{platform}_{appid}"
+        cached = self.cache.get("platform_metadata", {}).get(cache_key)
         if (
             not force_refresh
             and isinstance(cached, dict)
@@ -386,7 +429,26 @@ class ViewerService:
         ):
             return cached
 
-        metadata = self.steam_client.get_store_metadata(appid)
+        # Find the platform client
+        platform_client = None
+        for client in self.platform_clients:
+            if client.platform_name == platform:
+                platform_client = client
+                break
+        
+        if not platform_client:
+            # Fall back to Steam client for backward compatibility
+            platform_client = next((c for c in self.platform_clients if c.platform_name == "steam"), None)
+            if not platform_client:
+                return {
+                    "cached_at": time.time(),
+                    "genres": [],
+                    "categories": [],
+                    "tags": [],
+                    "short_description": "",
+                }
+
+        metadata = platform_client.get_store_metadata(appid)
         cached_metadata = {
             "cached_at": time.time(),
             "genres": metadata.get("genres", []),
@@ -394,17 +456,18 @@ class ViewerService:
             "tags": metadata.get("tags", []),
             "short_description": metadata.get("short_description", ""),
         }
-        self.cache.setdefault("steam_metadata", {})[str(appid)] = cached_metadata
+        self.cache.setdefault("platform_metadata", {})[cache_key] = cached_metadata
         self._save_cache()
         return cached_metadata
 
     def _build_visible_game(self, game: Dict, twitch_game: Dict, viewer_count: int, force_refresh: bool = False, stream_count: Optional[int] = None, peak_viewer_count: Optional[int] = None) -> Dict:
-        appid = int(game["appid"])
+        appid = game["appid"]
         name = game["name"]
-        steam_metadata = self._get_steam_metadata(appid, force_refresh=force_refresh)
+        platform = game.get("platform", "steam")
+        platform_metadata = self._get_platform_metadata(appid, platform, force_refresh=force_refresh)
         twitch_name = twitch_game.get("name") or name
         box_art_url = self._twitch_box_art_url(twitch_game.get("box_art_url"))
-        steam_tags = twitch_safe_tags(steam_metadata.get("tags", []))
+        platform_tags = twitch_safe_tags(platform_metadata.get("tags", []))
         last_played = int(game.get("last_played") or game.get("rtime_last_played") or 0)
         
         # If stream_count or peak_viewer_count not provided, fetch from cache
@@ -421,12 +484,9 @@ class ViewerService:
                 if peak_viewer_count is None:
                     peak_viewer_count = viewer_count
         
-        # Calculate discovery score
         discovery_score = calculate_discovery_score(
-            total_viewers=viewer_count,
+            viewer_count=viewer_count,
             stream_count=stream_count,
-            peak_viewers=peak_viewer_count,
-            chat_engagement=0.5
         )
         
         return {
@@ -439,23 +499,60 @@ class ViewerService:
             "discovery_score": discovery_score,
             "twitch_game_id": twitch_game["id"],
             "twitch_name": twitch_name,
-            "steam_tags": steam_tags,
-            "steam_genres": steam_metadata.get("genres", []),
-            "steam_categories": steam_metadata.get("categories", []),
-            "steam_short_description": steam_metadata.get("short_description", ""),
+            "platform_tags": platform_tags,
+            "platform_genres": platform_metadata.get("genres", []),
+            "platform_categories": platform_metadata.get("categories", []),
+            "platform_short_description": platform_metadata.get("short_description", ""),
             "installed": bool(game.get("installed")),
             "last_played": last_played,
             "twitch_box_art_url": self._cache_remote_image(
                 box_art_url,
                 self._asset_relative_path("twitch_box_art", f"{twitch_game['id']}.jpg"),
             ),
-            "steam_header_url": self._cache_steam_header(appid),
-            "steam_url": f"https://store.steampowered.com/app/{appid}/",
+            "platform": platform,
+            "platform_image_url": self._cache_platform_image(appid, platform),
+            "platform_url": self._get_platform_store_url(appid, platform),
             "twitch_url": f"https://www.twitch.tv/directory/category/{quote(twitch_name)}",
+            # Backward compatibility fields (will be deprecated)
+            "steam_header_url": self._cache_platform_image(appid, platform) if platform == "steam" else None,
+            "steam_url": self._get_platform_store_url(appid, platform) if platform == "steam" else None,
+            "steam_tags": platform_tags if platform == "steam" else [],
+            "steam_genres": platform_metadata.get("genres", []) if platform == "steam" else [],
+            "steam_categories": platform_metadata.get("categories", []) if platform == "steam" else [],
+            "steam_short_description": platform_metadata.get("short_description", "") if platform == "steam" else "",
         }
 
-    def _steam_header_url(self, appid: int) -> str:
-        return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid}/header.jpg"
+    def _get_platform_image_url(self, appid: str, platform: str = "steam") -> Optional[str]:
+        """Get platform-specific image URL for a game."""
+        for client in self.platform_clients:
+            if client.platform_name == platform:
+                url = client.get_image_url(appid)
+                if url:
+                    return url
+        # Fallback for Steam
+        if platform == "steam":
+            try:
+                appid_int = int(appid)
+                return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid_int}/header.jpg"
+            except (TypeError, ValueError):
+                pass
+        return None
+
+    def _get_platform_store_url(self, appid: str, platform: str = "steam") -> str:
+        """Get platform-specific store URL for a game."""
+        if platform == "steam":
+            try:
+                appid_int = int(appid)
+                return f"https://store.steampowered.com/app/{appid_int}/"
+            except (TypeError, ValueError):
+                return f"https://store.steampowered.com/"
+        elif platform == "gog":
+            return f"https://www.gog.com/game/{appid}"
+        elif platform == "epic":
+            # Epic doesn't have public store URLs for games
+            return f"https://store.epicgames.com/"
+        else:
+            return ""
 
     def _cached_static_path(self, relative_path: str) -> str:
         return "/" + relative_path.replace(os.sep, "/")
@@ -463,8 +560,14 @@ class ViewerService:
     def _asset_relative_path(self, *parts: str) -> str:
         return os.path.join(self.asset_cache_dir, *parts)
 
-    def _cache_steam_header(self, appid: int) -> str:
-        relative_path = self._asset_relative_path("steam_headers", f"{appid}.jpg")
+    def _cache_platform_image(self, appid: str, platform: str = "steam") -> Optional[str]:
+        # Get platform-specific image URL
+        image_url = self._get_platform_image_url(appid, platform)
+        if not image_url:
+            return None
+        
+        # Create platform-specific cache path
+        relative_path = self._asset_relative_path(f"{platform}_images", f"{appid}.jpg")
         local_path = self._absolute_path(relative_path)
 
         if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
@@ -472,21 +575,22 @@ class ViewerService:
 
         try:
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            # Use Steam client's request method for now (it has rate limiting)
             response = self.steam_client._steam_store_get(
-                self._steam_header_url(appid),
+                image_url,
                 headers={"User-Agent": "Mozilla/5.0"},
             )
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "")
             if content_type and not content_type.startswith("image/"):
-                return self._steam_header_url(appid)
+                return image_url
 
             with open(local_path, "wb") as f:
                 f.write(response.content)
             return self._cached_static_path(relative_path)
         except Exception as e:
-            print(f"Could not cache Steam header for appid {appid}: {e}")
-            return self._steam_header_url(appid)
+            print(f"Could not cache {platform} image for appid {appid}: {e}")
+            return image_url
 
     def _twitch_box_art_url(self, box_art_url: Optional[str]) -> Optional[str]:
         if not box_art_url:
@@ -538,7 +642,6 @@ class ViewerService:
             if not appid or not name:
                 continue
 
-            appid = int(appid)
             processed += 1
 
             _job_progress["processed"] = processed
@@ -578,7 +681,7 @@ class ViewerService:
 
             visible_games.append(self._build_visible_game(game, twitch_game, viewer_count, force_refresh=force_refresh, stream_count=stream_count))
 
-        visible_games.sort(key=lambda g: g["viewer_count"], reverse=True)
+        visible_games.sort(key=lambda g: g["discovery_score"], reverse=True)
 
         return {
             "games": visible_games,
