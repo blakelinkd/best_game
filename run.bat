@@ -1,15 +1,16 @@
 @echo off
+set "VENV_PYTHON=python_venv\Scripts\python.exe"
+
 echo Steam Twitch Viewer Dashboard
 echo =============================
 echo.
 
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: Python is not installed or not in PATH
+if not exist "%VENV_PYTHON%" (
+    echo ERROR: Virtual environment not found. Run setup_windows.bat first.
     pause
     exit /b 1
 )
 
-python main.py %*
+"%VENV_PYTHON%" main.py %*
 
 pause
