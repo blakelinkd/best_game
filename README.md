@@ -1,174 +1,299 @@
-# Steam Twitch Viewer Dashboard
+# Best Game — Find what to stream on Twitch
 
-Shows your owned Steam games with current Twitch viewer counts in a local Flask web app.
+<p align="center">
+  <a href="https://www.twitch.tv/biotachyonic" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/Twitch-biotachyonic-9146FF?style=for-the-badge&logo=twitch&logoColor=white&labelColor=1a1a2e" alt="Watch biotachyonic on Twitch">
+  </a>
+</p>
+
+**Stop guessing what game to stream.** Best Game reads your Steam, GOG,
+and Epic libraries, checks which of your games people are watching *right now*
+on Twitch, and ranks them by discovery potential—so you always pick the game
+that gives your stream the best shot at finding new viewers.
+
+---
+
+## What is Best Game?
+
+You own hundreds of games. At any given moment a handful of them have real
+audiences on Twitch while most have zero viewers. Best Game answers the
+question every variety streamer asks before hitting "Go Live":
+
+> *Which game in my library should I play today?*
+
+It works by scanning your Steam library (plus GOG, Epic, and retro consoles
+if you want), matching every game to its Twitch category, pulling live viewer
+counts, and showing you a dashboard of game cards sorted by how likely a small
+streamer is to pick up organic viewers.
+
+It also tracks viewer history over time so you can spot patterns, discover
+games with proven audiences that happen to have zero active streams right
+now, and even update your Twitch stream info directly from the dashboard.
+
+Everything runs **locally on your PC**. No accounts to create, no data leaves
+your machine.
+
+---
 
 ## Features
 
-- Fetches owned Steam games from Steam Web API.
-- Matches Steam game names to Twitch categories.
-- Shows only games with live Twitch viewers by default.
-- Processes games in most-recently-played order and adds cards as each game finishes.
-- Sorts visible cards by recently played, installed status, or viewer count.
-- Displays responsive Steam-style game cards with Steam header images.
-- Opens the dashboard in your browser when launched.
-- Caches owned game data, Twitch category matches, short-lived viewer counts, and downloaded images.
+- **Multi-platform game library** — Steam, GOG, Epic Games, and retro
+  consoles (NES, SNES, PS1, PS2, Genesis, N64, and more)
+- **Live Twitch viewer counts** — See exactly how many people are watching
+  each game in your library on Twitch right now
+- **Discovery score** — Each game gets a score based on visibility, demand,
+  audience depth, and competition; games with lower scores are hidden so you
+  only see what's worth streaming
+- **Historical charts** — Line charts and day-by-hour heatmaps so you can see
+  *when* games peak on Twitch
+- **Opportunity finder** — Games with proven historical viewership but zero
+  active streams right now: the perfect time to jump in
+- **Update your Twitch stream** — Change your game/category, stream title,
+  tags, and language directly from the dashboard
+- **AI tag suggestions** — Optional local LLM (Ollama) generates
+  Twitch-friendly tags tailored to each game
+- **Current game detection** — Dashboard highlights the game you're currently
+  playing (reads Steam + window title)
+- **Search and filter** — Search by title, tags, or description; filter by
+  installed, on-sale, recently played
+- **Tracking every 15 minutes** — Background collector records viewer counts
+  so historical data builds up automatically while the app is running
 
-## Requirements
+---
 
-- Python 3.8 or higher
-- Steam Web API key
-- Steam user ID
-- Twitch Developer App client ID and secret
+## Quick Start
 
-## Setup
+### 1. Download the project
 
-Install dependencies:
+Click the green **Code** button at the top of this page and select
+**Download ZIP**. Extract the ZIP anywhere on your PC.
 
-```powershell
-python setup.py
+### 2. Run the setup script
+
+Double-click **`setup_windows.bat`** (or `setup_windows_ps.bat` if you prefer
+PowerShell).
+
+The setup script will:
+- Download a portable copy of Python 3.13 (nothing installs system-wide)
+- Create an isolated virtual environment
+- Install all required Python packages
+- Install Playwright's Chromium browser (used for fetching game metadata)
+
+> **Nothing is installed outside the project folder.** If you want to remove
+> the app later, just delete the folder.
+
+### 3. Launch the dashboard
+
+Double-click **`run.bat`**. Your browser will open automatically to the
+dashboard.
+
+The first time you open it your browser may show a "connection is not
+private" warning. Click **Advanced → Proceed to localhost**. This is normal:
+the app runs over HTTPS locally because Twitch requires HTTPS for OAuth
+logins.
+
+---
+
+## Setting Up Your Credentials
+
+The dashboard needs a few free API keys to work. You set these once from the
+**Settings** page (gear icon in the top-right corner of the dashboard).
+
+### Steam Web API Key
+
+1. Go to [https://steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)
+2. Log in with your Steam account
+3. Enter any domain name (e.g. `localhost`) and agree to the terms
+4. Copy the key and paste it into Settings → **Steam API Key**
+
+### Steam User ID
+
+Your Steam User ID tells the app whose game library to fetch. You can use:
+
+- Your **Steam profile name** (the custom URL name, e.g. `gabelogannewell`)
+- Your **SteamID64** (a 17-digit number)
+- The numeric folder name inside `Steam/userdata/`
+
+The Settings page can resolve custom profile names automatically.
+
+### Twitch Client ID & Secret
+
+1. Go to [https://dev.twitch.tv/console](https://dev.twitch.tv/console)
+2. Sign in with your Twitch account
+3. Click **Register Your Application**
+4. Give it any name (e.g. "Best Game")
+5. Set the OAuth Redirect URL to: `https://localhost:5000/auth/twitch/callback`
+6. Choose **Confidential** as the client type
+7. After creating the app, click **New Secret** and copy both the Client ID
+   and Client Secret
+8. Paste them into Settings
+
+### Connect Twitch (optional)
+
+After entering your Twitch credentials, click the **Connect Twitch** button
+in Settings. This lets the dashboard update your stream's game/category,
+title, tags, and language with one click.
+
+---
+
+## Using the Dashboard
+
+Once your credentials are saved, the dashboard loads automatically. Game
+cards appear as they're processed—newest first, then your most recently
+played games first.
+
+**Each game card shows:**
+- Game title and header image
+- Current Twitch viewer count and stream count
+- Discovery score (higher = better chance of organic viewers)
+- Whether the game is installed
+- Genre tags (click to filter)
+- Sale status if the game is discounted
+
+**Sort** cards by viewers, discovery score, recently played, name, or
+installed status. **Search** by title, tags, or description to narrow down
+your options.
+
+**Tabs across the top:**
+- **Live Games** — games in your library with active Twitch viewers
+- **Charts** — historical viewer trends and heatmaps
+- **Opportunities** — games with proven viewership but zero active streams
+
+---
+
+## For Advanced Users
+
+### Running from the command line
+
+```bash
+python_venv\Scripts\python.exe main.py
+# or activate the venv first:
+python_venv\Scripts\activate.bat
+python main.py
 ```
 
-Create a `.env` file or set Windows environment variables:
+### Command-line options
+
+| Flag | Description |
+|------|-------------|
+| `--port 5050` | Use a different port (default: 5000) |
+| `--host 0.0.0.0` | Listen on all interfaces |
+| `--no-browser` | Don't open the browser automatically |
+| `--http` | Run without HTTPS (disables Twitch OAuth) |
+
+### Environment variables (.env file)
+
+All credentials and settings live in a `.env` file at the project root. The
+Settings page writes this file automatically, but you can also create it
+manually:
 
 ```env
-STEAM_USER_ID=your_steam_user_id_here
 STEAM_API_KEY=your_steam_webapi_key_here
+STEAM_USER_ID=your_steam_profile_name_or_id_here
 TWITCH_CLIENT_ID=your_twitch_client_id_here
 TWITCH_CLIENT_SECRET=your_twitch_client_secret_here
 ```
 
-You can also start the app and open **Settings** from the dashboard. The settings page writes credentials and local paths to `.env`, which is ignored by git so release packages do not include your personal keys.
-
-`STEAM_USER_ID` may be your Steam custom profile name, Steam profile URL, SteamID64, or the numeric folder name under `Steam/userdata`. If you enter a custom profile name in Settings, the app resolves it with Steam's `ResolveVanityURL` API after your Steam Web API key is saved.
-
-### Retro console libraries
-
-Retro platforms are optional and are disabled unless `RETRO_SYSTEMS` is set. Build the local retro catalog first:
-
-```powershell
-python retro_collector.py
-```
-
-Then enable every supported system, or a comma-separated subset:
+**Optional platform settings:**
 
 ```env
+ENABLED_PLATFORMS=steam,gog,epic
+GOG_DB_PATH=C:\ProgramData\GOG.com\Galaxy\storage\galaxy-2.0.db
+EPIC_CATALOG_PATH=C:\ProgramData\Epic\EpicGamesLauncher\Data\Catalog
 RETRO_SYSTEMS=all
-# RETRO_SYSTEMS=nes,snes,n64,genesis,ps1
 ```
 
-The dashboard reads `cache/retro_games.json`, treats each console as its own platform, and uses libretro thumbnail URLs directly instead of downloading every retro image into `static/cache/`.
-
-## Run
-
-Start the app and open the browser:
-
-```powershell
-python main.py
-```
-
-Use a different port:
-
-```powershell
-python main.py --port 5050
-```
-
-Run without opening the browser:
-
-```powershell
-python main.py --no-browser
-```
-
-## Twitch Login And Stream Updates
-
-Each game card has an **Update stream info** button. It opens a modal with the Twitch category filled from the matched game, title/language filled from the current channel when available, and Twitch-safe tags seeded from cached Steam Store metadata for that game. Tags are normalized to Twitch's channel tag rules: no spaces, no special characters, max 25 characters each, deduplicated, and capped at 10 tags.
-
-The **AI tags** button uses LM Studio's OpenAI-compatible local server. Start the server in LM Studio before clicking it. By default the app connects to `http://127.0.0.1:1234` and uses the first model LM Studio reports as loaded. You can override either value in `.env`:
+**Optional AI tag generation (requires [Ollama](https://ollama.com)):**
 
 ```env
-LM_STUDIO_BASE_URL=http://127.0.0.1:1234
-LM_STUDIO_MODEL=
-LM_STUDIO_TIMEOUT=30
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3.5:4b
+OLLAMA_TIMEOUT=60
 ```
 
-If the Flask app is running in Ubuntu but LM Studio is running somewhere else, set `LM_STUDIO_BASE_URL` to the address that Ubuntu can reach.
-
-To enable updates:
-
-1. Create a Twitch app in the Developer Console.
-2. Add the OAuth redirect URL shown on the Settings page. The default local URL is:
-
-```text
-https://localhost:5000/auth/twitch/callback
-```
-
-The app runs locally over HTTPS by default because Twitch rejects non-HTTPS redirect URLs during application registration. Your browser may show a localhost certificate warning the first time you open the app. This is expected for the local self-signed certificate; continue to localhost to finish Twitch setup.
-
-3. Keep the Twitch app client type set to **Confidential**.
-4. Open the app's **Manage** page, copy the Client ID, click **New Secret**, and copy the secret.
-5. Paste both values into this app's Settings page.
-6. Start the app and click **Connect Twitch**.
-7. Approve the stream update permission for your broadcaster account.
-
-The app stores the Twitch login token locally in `cache/twitch_user_token.json`, which is ignored by git.
-
-Optionally, you may set your Twitch username as a fallback:
-
-```env
-TWITCH_BROADCASTER_ID=your_twitch_username_here
-```
-
-For example, `TWITCH_BROADCASTER_ID=biotachyonic`. The app updates:
-
-- Twitch category/game
-- Stream title
-- Broadcast language
-- Tags
-- Branded content flag
-
-Twitch's official channel update API does not currently expose the Go Live Notification text, so the app cannot set that field through the same update request.
-
-## Caching
-
-The app keeps API and asset data locally so repeat loads avoid work that has already been done:
-
-- Owned Steam games are cached for 24 hours by default.
-- Steam Store genres/categories used for stream tag suggestions are cached for 24 hours by default.
-- Twitch category matches are cached until you force a refresh.
-- Twitch viewer counts are cached for 10 minutes by default.
-- Steam header images and Twitch box art are downloaded once to `static/cache/`.
-
-When the cache is warm and viewer counts are still fresh, the dashboard renders directly without starting a background scan. Otherwise the page renders immediately and cards are added as each game is processed.
-
-Use the page's **Force API refresh** checkbox to bypass the data cache for a run. Cached images are still reused if the files already exist.
-
-You can tune cache durations in `.env`:
+**Cache tuning:**
 
 ```env
 OWNED_GAMES_CACHE_TTL=86400
 VIEWER_COUNT_CACHE_TTL=600
 ```
 
+### Retro console libraries
+
+Build the retro game catalog first, then enable it:
+
+```bash
+python_venv\Scripts\python.exe retro_collector.py
+```
+
+Then add to `.env`:
+
+```env
+RETRO_SYSTEMS=all
+# or pick specific consoles: nes,snes,n64,genesis,ps1,ps2
+```
+
+### Data & cache locations
+
+| Path | Contents |
+|------|----------|
+| `cache/viewer_cache.json` | Main game + viewer data cache |
+| `cache/viewer_history.db` | SQLite historical snapshot database |
+| `cache/twitch_user_token.json` | Twitch OAuth token (keep private) |
+| `static/cache/` | Downloaded game images |
+| `.env` | Your API keys and settings (keep private) |
+
+All `cache/` and `.env` files are gitignored—your credentials and cache data
+stay local.
+
+---
+
+## Setup Scripts Explained
+
+| Script | What it does |
+|--------|-------------|
+| `setup_windows.bat` | Full setup in a command prompt: downloads portable Python 3.13, creates a virtual environment, installs all dependencies. **Recommended for most users.** |
+| `setup_windows.ps1` | Same as above but in PowerShell with colored output. |
+| `setup_windows_ps.bat` | Tiny helper that runs `setup_windows.ps1` with the correct execution policy. |
+| `run.bat` | Launches the dashboard. Detects the virtual environment automatically. |
+| `setup_deps.py` | Called by the scripts above. Upgrades pip, installs all packages from `requirements.txt`, installs Playwright Chromium. |
+
+---
+
 ## How It Works
 
-1. Steam Web API returns your owned games.
-2. Games are processed in descending `rtime_last_played` order.
-3. Steam Store metadata provides genre/category tag suggestions for each shown game.
-4. Twitch Search Categories finds the matching Twitch category for each Steam title.
-5. Twitch Streams returns current live viewer counts for each matched category.
-6. Games with `0` viewers are filtered out by default.
-7. The browser adds cards as they arrive and can sort them locally.
+1. Steam Web API returns your owned games
+2. Games are matched to Twitch categories via the Twitch Helix API
+3. Live viewer counts are fetched for each matched category
+4. Store metadata (genres, tags, descriptions) enriches each game card
+5. A discovery score is calculated based on visibility, demand, audience
+   depth, and top-stream concentration
+6. Game cards are rendered in the browser, sorted by your chosen criteria
+7. A background collector snapshots viewer counts every 15 minutes for
+   historical charts
 
-## Rate Limits
+### API Rate Limits
 
-The clients throttle API calls and retry after `429` responses:
+The app throttles requests to stay within provider limits:
 
-- Steam Web API: `300` requests per 5 minutes
-- Steam Store fallback: `60` requests per minute
-- Twitch Helix: `800` requests per minute
-- Twitch auth token requests: `20` requests per minute
+| Service | Limit |
+|---------|-------|
+| Steam Web API | 300 requests per 5 minutes |
+| Steam Store | 60 requests per minute |
+| Twitch Helix | 800 requests per minute |
+| Twitch Auth | 20 requests per minute |
 
-## Notes
+---
 
-- This app does not modify Steam files or collections.
-- Large libraries can take a while on the first scan, but cached runs reuse owned games, Twitch matches, Steam metadata, and images.
-- `cache/` and `static/cache/` are generated locally and ignored by git.
+## Requirements
+
+- Windows 10 or later (the setup scripts are Windows-only; Python source
+  runs on any OS with Python 3.8+)
+- A Steam account (free)
+- A Twitch account (free)
+- Internet connection
+
+---
+
+*This app does not modify Steam files or game collections. It only reads
+your public game library and Twitch category data.*
