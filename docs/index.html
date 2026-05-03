@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Best Game — Find What to Stream on Twitch | Steam Library Twitch Viewer Dashboard</title>
+<meta name="description" content="Stop guessing what game to stream. Best Game scans your Steam, GOG, and Epic libraries and shows live Twitch viewer counts for every game you own. Find the best game to stream on Twitch right now with real-time viewer data, discovery scores, and historical charts.">
+<meta name="keywords" content="best game to stream on Twitch, what game should I stream, Twitch viewer counts, Steam library Twitch dashboard, game streaming analytics, Twitch game discovery, stream game picker, Twitch category viewer counts, variety streamer tool, find viewers on Twitch">
+<meta name="author" content="biotachyonic">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://blakelinkd.github.io/best_game/">
+<meta property="og:title" content="Best Game — Find What to Stream on Twitch">
+<meta property="og:description" content="Scan your Steam library and see which of your games have live Twitch viewers right now. The smarter way to pick your next stream game.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://blakelinkd.github.io/best_game/">
+<meta property="og:image" content="https://blakelinkd.github.io/best_game/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Best Game — Find What to Stream on Twitch">
+<meta name="twitter:description" content="Scan your Steam library and see which games have live Twitch viewers. Pick the best game to stream, every time.">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0e141b;
+    --panel: #16202b;
+    --panel-strong: #1b2838;
+    --panel-soft: #223348;
+    --text: #dbe7f3;
+    --muted: #8f98a8;
+    --accent: #66c0f4;
+    --accent-strong: #1a9fff;
+    --green: #8bc53f;
+    --line: rgba(255,255,255,0.1);
+    --shadow: rgba(0,0,0,0.35);
+    --twitch: #9146FF;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: linear-gradient(180deg, rgba(27,40,56,0.96), rgba(14,20,27,1) 400px), var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: #fff; }
+
+  .wrap {
+    width: min(960px, calc(100% - 40px));
+    margin: 0 auto;
+  }
+
+  /* ── Hero ───────────────────────────────── */
+
+  .hero {
+    text-align: center;
+    padding: 80px 0 60px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .hero__badge {
+    display: inline-block;
+    padding: 5px 14px;
+    border: 1px solid rgba(145,70,255,0.35);
+    border-radius: 999px;
+    background: rgba(145,70,255,0.12);
+    color: #d7c2ff;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 28px;
+  }
+
+  .hero h1 {
+    font-size: clamp(36px, 8vw, 60px);
+    font-weight: 800;
+    line-height: 1.12;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, #ffffff 0%, #a0c8f0 70%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero__subtitle {
+    font-size: clamp(17px, 3vw, 22px);
+    color: var(--muted);
+    max-width: 620px;
+    margin: 0 auto 32px;
+  }
+
+  .hero__actions {
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 28px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+  }
+  .btn:hover { transform: translateY(-2px); }
+
+  .btn--twitch {
+    background: var(--twitch);
+    color: #fff;
+    box-shadow: 0 4px 20px rgba(145,70,255,0.35);
+  }
+  .btn--twitch:hover { filter: brightness(1.1); color: #fff; box-shadow: 0 6px 28px rgba(145,70,255,0.5); }
+
+  .btn--github {
+    background: linear-gradient(180deg, #66c0f4, #1a78aa);
+    color: #071019;
+    box-shadow: 0 4px 20px rgba(26,120,170,0.35);
+  }
+  .btn--github:hover { filter: brightness(1.1); box-shadow: 0 6px 28px rgba(26,120,170,0.5); }
+
+  .btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+  /* ── Section ────────────────────────────── */
+
+  .section {
+    padding: 64px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .section:last-of-type { border-bottom: 0; }
+
+  .section__label {
+    display: inline-block;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-bottom: 8px;
+  }
+
+  .section h2 {
+    font-size: clamp(24px, 5vw, 36px);
+    font-weight: 700;
+    margin-bottom: 20px;
+  }
+
+  .section h3 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 32px 0 12px;
+  }
+
+  .section h3:first-child { margin-top: 0; }
+
+  .section p, .section li {
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.7;
+    max-width: 720px;
+  }
+
+  .section li { margin-bottom: 8px; }
+  .section ul, .section ol { padding-left: 22px; margin-bottom: 20px; }
+
+  /* ── Feature grid ───────────────────────── */
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px;
+    margin-top: 32px;
+  }
+
+  .feature {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: linear-gradient(180deg, var(--panel-soft), var(--panel));
+    padding: 24px;
+    transition: border-color 140ms ease, transform 140ms ease;
+  }
+  .feature:hover {
+    border-color: rgba(102,192,244,0.35);
+    transform: translateY(-2px);
+  }
+
+  .feature__icon {
+    font-size: 28px;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .feature h4 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .feature p {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+
+  /* ── Steps ──────────────────────────────── */
+
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 24px;
+  }
+
+  .step {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: linear-gradient(180deg, #202f42, #121a24);
+    padding: 24px;
+    position: relative;
+  }
+
+  .step__num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #071019;
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 14px;
+  }
+
+  .step h4 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .step p {
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  /* ── Code block ─────────────────────────── */
+
+  pre {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #0a1018;
+    padding: 18px 20px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  code {
+    color: var(--accent);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    background: rgba(102,192,244,0.08);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  pre code {
+    color: var(--text);
+    background: none;
+    padding: 0;
+  }
+
+  /* ── Table ──────────────────────────────── */
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  th {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  td { color: var(--muted); }
+
+  /* ── Quote block ────────────────────────── */
+
+  blockquote {
+    border-left: 3px solid var(--accent);
+    margin: 20px 0;
+    padding: 12px 20px;
+    background: rgba(102,192,244,0.06);
+    border-radius: 0 6px 6px 0;
+  }
+
+  blockquote p {
+    color: var(--text);
+    font-size: 18px;
+    font-style: italic;
+  }
+
+  /* ── Footer ─────────────────────────────── */
+
+  .footer {
+    text-align: center;
+    padding: 40px 0 48px;
+    color: var(--muted);
+    font-size: 13px;
+    border-top: 1px solid var(--line);
+  }
+
+  .footer a { color: var(--accent); }
+
+  /* ── Responsive ─────────────────────────── */
+
+  @media (max-width: 640px) {
+    .hero { padding: 48px 0 36px; }
+    .hero h1 { font-size: 32px; }
+    .section { padding: 40px 0; }
+    .features { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+
+<header class="hero">
+  <div class="wrap">
+    <p class="hero__badge">Free · Open Source · Windows</p>
+    <h1>Find the Best Game<br>to Stream on Twitch</h1>
+    <p class="hero__subtitle">
+      Scan your Steam library and see live Twitch viewer counts for every
+      game you own. Pick smarter, grow faster.
+    </p>
+    <div class="hero__actions">
+      <a class="btn btn--twitch" href="https://www.twitch.tv/biotachyonic" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.265 2 2.5 6.706v15.235h5.294V24h2.97l2.353-2.06h4.235L22.94 16.06V2H4.265zm16.323 13.176-3.235 3.236h-5.294l-2.353 2.058v-2.058H5.94V3.765h14.647v11.411zM17.353 7.294h1.764v6.176h-1.764zm-4.706 0h1.765v6.176h-1.765z"/></svg>
+        Watch on Twitch
+      </a>
+      <a class="btn btn--github" href="https://github.com/blakelinkd/best_game" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════ WHAT IS IT ═══════════════ -->
+
+<section class="section" id="what-is">
+  <div class="wrap">
+    <p class="section__label">What is Best Game?</p>
+    <h2>Your library meets real-time Twitch data</h2>
+
+    <blockquote>
+      <p>Which game in my library should I play today?</p>
+    </blockquote>
+
+    <p>
+      Every variety streamer asks this before hitting "Go Live." You own
+      hundreds of games, but only a handful have real audiences on Twitch at
+      any given moment. Best Game answers that question with data.
+    </p>
+
+    <p>
+      It reads your <strong>Steam</strong>, <strong>GOG</strong>, and
+      <strong>Epic Games</strong> libraries, matches every game to its Twitch
+      category, pulls live viewer counts, and shows you a dashboard of game
+      cards ranked by how likely a small streamer is to pick up organic
+      viewers.
+    </p>
+
+    <p>
+      Everything runs <strong>locally on your PC</strong>. No accounts to
+      create, no data leaves your machine.
+    </p>
+
+    <div class="features">
+      <div class="feature">
+        <span class="feature__icon">👁️</span>
+        <h4>Live Twitch viewer counts</h4>
+        <p>See exactly how many people are watching each game in your library on Twitch right now.</p>
+      </div>
+      <div class="feature">
+        <span class="feature__icon">📊</span>
+        <h4>Discovery score</h4>
+        <p>Every game gets a score based on visibility, demand, and competition. Only see what's worth streaming.</p>
+      </div>
+      <div class="feature">
+        <span class="feature__icon">📈</span>
+        <h4>Historical charts</h4>
+        <p>Line charts and heatmaps reveal when games peak on Twitch so you can time your streams.</p>
+      </div>
+      <div class="feature">
+        <span class="feature__icon">🎯</span>
+        <h4>Opportunity finder</h4>
+        <p>Find games with proven viewership but zero active streams — the perfect window to jump in.</p>
+      </div>
+      <div class="feature">
+        <span class="feature__icon">🔄</span>
+        <h4>Update your stream</h4>
+        <p>Change your Twitch category, title, tags, and language directly from the dashboard.</p>
+      </div>
+      <div class="feature">
+        <span class="feature__icon">🤖</span>
+        <h4>AI tag suggestions</h4>
+        <p>Optional local LLM generates Twitch-friendly tags tailored to each game via Ollama.</p>
+      </div>
+      <div class="feature">
+        <span class="feature__icon">🎮</span>
+        <h4>Multi-platform</h4>
+        <p>Supports Steam, GOG, Epic Games, and retro consoles (NES, SNES, PS1, PS2, Genesis, N64, and more).</p>
+      </div>
+      <div class="feature">
+        <span class="feature__icon">🔍</span>
+        <h4>Search &amp; filter</h4>
+        <p>Search by title, tags, or description. Filter by installed, on-sale, or recently played.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ QUICK START ═══════════════ -->
+
+<section class="section" id="quickstart">
+  <div class="wrap">
+    <p class="section__label">Quick Start</p>
+    <h2>Get up and running in under 5 minutes</h2>
+
+    <div class="steps">
+      <div class="step">
+        <span class="step__num">1</span>
+        <h4>Download the project</h4>
+        <p>Click the green <strong>Code</strong> button on the <a href="https://github.com/blakelinkd/best_game">GitHub repo</a> and select <strong>Download ZIP</strong>. Extract it anywhere on your PC.</p>
+      </div>
+      <div class="step">
+        <span class="step__num">2</span>
+        <h4>Run the setup script</h4>
+        <p>Double-click <code>setup_windows.bat</code>. It downloads a portable copy of Python, creates a virtual environment, and installs all dependencies — nothing installs system-wide.</p>
+      </div>
+      <div class="step">
+        <span class="step__num">3</span>
+        <h4>Launch the dashboard</h4>
+        <p>Double-click <code>run.bat</code>. Your browser opens automatically. Accept the localhost certificate warning (normal for local HTTPS), then enter your API keys in Settings.</p>
+      </div>
+    </div>
+
+    <h3>Setup scripts reference</h3>
+    <table>
+      <thead>
+        <tr><th>Script</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>setup_windows.bat</code></td><td>Full setup in command prompt. Downloads portable Python 3.13, creates venv, installs deps. <strong>Recommended.</strong></td></tr>
+        <tr><td><code>setup_windows.ps1</code></td><td>Same as above in PowerShell with colored output.</td></tr>
+        <tr><td><code>setup_windows_ps.bat</code></td><td>Tiny helper that runs the PS1 script with the right execution policy.</td></tr>
+        <tr><td><code>run.bat</code></td><td>Launches the dashboard. Detects the virtual environment automatically.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ═══════════════ CREDENTIALS ═══════════════ -->
+
+<section class="section" id="credentials">
+  <div class="wrap">
+    <p class="section__label">Credentials</p>
+    <h2>Free API keys you'll need</h2>
+    <p>
+      The dashboard needs a few free API keys. You set these once from the
+      <strong>Settings</strong> page (gear icon in the top-right corner of
+      the dashboard).
+    </p>
+
+    <h3>Steam Web API Key</h3>
+    <ol>
+      <li>Go to <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a></li>
+      <li>Log in with your Steam account</li>
+      <li>Enter any domain name (e.g. <code>localhost</code>) and agree to the terms</li>
+      <li>Copy the key and paste it into Settings</li>
+    </ol>
+
+    <h3>Steam User ID</h3>
+    <p>
+      Tells the app whose game library to fetch. Use your custom profile
+      name, SteamID64, or the numeric folder inside <code>Steam/userdata/</code>.
+      The Settings page resolves custom names automatically.
+    </p>
+
+    <h3>Twitch Client ID &amp; Secret</h3>
+    <ol>
+      <li>Go to <a href="https://dev.twitch.tv/console" target="_blank" rel="noopener">dev.twitch.tv/console</a></li>
+      <li>Click <strong>Register Your Application</strong></li>
+      <li>Give it any name (e.g. "Best Game")</li>
+      <li>Set OAuth Redirect URL to: <code>https://localhost:5000/auth/twitch/callback</code></li>
+      <li>Choose <strong>Confidential</strong> as the client type</li>
+      <li>Click <strong>New Secret</strong> and copy both the Client ID and Secret</li>
+      <li>Paste them into Settings</li>
+      <li>Click <strong>Connect Twitch</strong> to enable one-click stream updates</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ═══════════════ ADVANCED ═══════════════ -->
+
+<section class="section" id="advanced">
+  <div class="wrap">
+    <p class="section__label">Advanced</p>
+    <h2>For power users and developers</h2>
+
+    <h3>Command-line options</h3>
+    <table>
+      <thead><tr><th>Flag</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>--port 5050</code></td><td>Use a different port (default: 5000)</td></tr>
+        <tr><td><code>--host 0.0.0.0</code></td><td>Listen on all network interfaces</td></tr>
+        <tr><td><code>--no-browser</code></td><td>Don't open the browser automatically</td></tr>
+        <tr><td><code>--http</code></td><td>Run without HTTPS (disables Twitch OAuth)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Environment variables</h3>
+    <p>All settings live in a <code>.env</code> file at the project root. The Settings page writes it automatically.</p>
+
+    <pre><code>STEAM_API_KEY=your_steam_webapi_key_here
+STEAM_USER_ID=your_steam_profile_name_or_id_here
+TWITCH_CLIENT_ID=your_twitch_client_id_here
+TWITCH_CLIENT_SECRET=your_twitch_client_secret_here
+
+# Optional: multi-platform
+ENABLED_PLATFORMS=steam,gog,epic
+
+# Optional: retro consoles (run retro_collector.py first)
+RETRO_SYSTEMS=all
+
+# Optional: AI tag generation (requires Ollama)
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3.5:4b
+
+# Optional: cache tuning
+OWNED_GAMES_CACHE_TTL=86400
+VIEWER_COUNT_CACHE_TTL=600</code></pre>
+
+    <h3>How it works</h3>
+    <ol>
+      <li>Steam Web API returns your owned games</li>
+      <li>Games are matched to Twitch categories via the Twitch Helix API</li>
+      <li>Live viewer counts are fetched for each matched category</li>
+      <li>Store metadata enriches each game card with genres, tags, and descriptions</li>
+      <li>A discovery score is calculated (visibility, demand, audience depth, competition)</li>
+      <li>Cards are rendered in the browser and sortable by your chosen criteria</li>
+      <li>A background collector snapshots viewer counts every 15 minutes for historical charts</li>
+    </ol>
+
+    <h3>API rate limits</h3>
+    <table>
+      <thead><tr><th>Service</th><th>Limit</th></tr></thead>
+      <tbody>
+        <tr><td>Steam Web API</td><td>300 requests / 5 min</td></tr>
+        <tr><td>Steam Store</td><td>60 requests / min</td></tr>
+        <tr><td>Twitch Helix</td><td>800 requests / min</td></tr>
+        <tr><td>Twitch Auth</td><td>20 requests / min</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Requirements</h3>
+    <ul>
+      <li>Windows 10 or later (setup scripts are Windows-only; Python source runs anywhere with Python 3.8+)</li>
+      <li>A Steam account (free)</li>
+      <li>A Twitch account (free)</li>
+      <li>Internet connection</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+
+<footer class="footer">
+  <div class="wrap">
+    <p>
+      <strong>Best Game</strong> by
+      <a href="https://www.twitch.tv/biotachyonic" target="_blank" rel="noopener noreferrer">biotachyonic</a>
+      &middot;
+      <a href="https://github.com/blakelinkd/best_game" target="_blank" rel="noopener noreferrer">Source on GitHub</a>
+    </p>
+    <p style="margin-top:8px;">
+      This app does not modify Steam files or game collections. It only reads
+      your public game library and Twitch category data.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
