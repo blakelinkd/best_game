@@ -51,21 +51,25 @@ if not exist "%PYTHON_DIR%\python.exe" (
         %PS% "(Get-Content '%%f') -replace '^#import site', 'import site' | Set-Content '%%f'"
     )
 
-    REM ---- install pip into the portable Python ----
-    echo [3/4] Installing pip...
+    REM ---- install pip and virtualenv into the portable Python ----
+    echo [3/5] Installing pip...
     %PS% "Invoke-WebRequest -Uri '%GET_PIP_URL%' -OutFile '%PYTHON_DIR%\get-pip.py' -ErrorAction Stop"
     if !errorlevel! neq 0 goto :error
     "%PYTHON_DIR%\python.exe" "%PYTHON_DIR%\get-pip.py" --no-warn-script-location
     if !errorlevel! neq 0 goto :error
     del "%PYTHON_DIR%\get-pip.py"
+
+    echo [4/5] Installing virtualenv...
+    "%PYTHON_DIR%\python.exe" -m pip install virtualenv --no-warn-script-location
+    if !errorlevel! neq 0 goto :error
 ) else (
     echo [SKIP] Portable Python already present.
 )
 
-REM ---- create venv ----
+REM ---- create venv (using virtualenv, embeddable Python lacks stdlib venv) ----
 if not exist "%VENV_DIR%\Scripts\python.exe" (
-    echo [4/4] Creating virtual environment ^(%VENV_DIR%^)...
-    "%PYTHON_DIR%\python.exe" -m venv "%VENV_DIR%"
+    echo [5/5] Creating virtual environment ^(%VENV_DIR%^)...
+    "%PYTHON_DIR%\python.exe" -m virtualenv "%VENV_DIR%"
     if !errorlevel! neq 0 goto :error
 ) else (
     echo [SKIP] Virtual environment already exists.

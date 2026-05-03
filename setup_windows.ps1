@@ -87,23 +87,28 @@ if (-not (Test-Path $pythonExe)) {
         Set-Content -Path $pthFile.FullName -Value $content -NoNewline
     }
 
-    # ---- install pip ----
-    Write-Step "[3/4] Installing pip..."
+    # ---- install pip and virtualenv ----
+    Write-Step "[3/5] Installing pip..."
     $getPipPath = Join-Path $PythonDir "get-pip.py"
     Invoke-WebRequest -Uri $GetPipUrl -OutFile $getPipPath -ErrorAction Stop
     & $pythonExe $getPipPath --no-warn-script-location
     if ($LASTEXITCODE -ne 0) { throw "get-pip.py failed" }
     Remove-Item $getPipPath -Force
     Write-OK "pip installed"
+
+    Write-Step "[4/5] Installing virtualenv..."
+    & $pythonExe -m pip install virtualenv --no-warn-script-location
+    if ($LASTEXITCODE -ne 0) { throw "virtualenv install failed" }
+    Write-OK "virtualenv installed"
 } else {
     Write-Skip "Portable Python already present"
 }
 
-# ---- create venv ----
+# ---- create venv (using virtualenv, embeddable Python lacks stdlib venv) ----
 if (-not (Test-Path $venvPython)) {
-    Write-Step "[4/4] Creating virtual environment ($VenvDir)..."
-    & $pythonExe -m venv $VenvDir
-    if ($LASTEXITCODE -ne 0) { throw "venv creation failed" }
+    Write-Step "[5/5] Creating virtual environment ($VenvDir)..."
+    & $pythonExe -m virtualenv $VenvDir
+    if ($LASTEXITCODE -ne 0) { throw "virtualenv creation failed" }
     Write-OK "Virtual environment created"
 } else {
     Write-Skip "Virtual environment already exists"
