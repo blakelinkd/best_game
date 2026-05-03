@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OBS Twitch Chat Alert</title>
+  <style>
+    :root {
+      --bg: rgba(40, 42, 54, 0.58);
+      --bg-strong: rgba(40, 42, 54, 0.84);
+      --border: rgba(189, 147, 249, 0.42);
+      --text: #f8f8f2;
+      --muted: #cfcfe8;
+      --purple: #bd93f9;
+      --pink: #ff79c6;
+      --cyan: #8be9fd;
+      --green: #50fa7b;
+      --yellow: #f1fa8c;
+      --orange: #ffb86c;
+      --red: #ff5555;
+      --shadow: rgba(0, 0, 0, 0.72);
+      --radius: 8px;
+      --font-size: clamp(18px, 2.15vw, 32px);
+      --line-height: 1.28;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+      color: var(--text);
+      font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-start;
+      padding: clamp(6px, 1.2vw, 14px);
+    }
+
+    #chat {
+      width: min(100%, 620px);
+      max-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: clamp(6px, 0.8vw, 10px);
+      mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        black 9%,
+        black 92%,
+        transparent 100%
+      );
+    }
+
+    .message,
+    .status {
+      width: fit-content;
+      max-width: 100%;
+      padding: clamp(6px, 0.85vw, 10px) clamp(9px, 1.2vw, 14px);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--purple);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(90deg, rgba(189, 147, 249, 0.22), transparent 42%),
+        var(--bg);
+      color: var(--text);
+      font-size: var(--font-size);
+      line-height: var(--line-height);
+      font-weight: 800;
+      overflow-wrap: anywhere;
+      word-break: normal;
+      text-shadow:
+        0 2px 3px var(--shadow),
+        0 0 8px rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(3px) saturate(1.15);
+      box-shadow:
+        0 4px 14px rgba(0, 0, 0, 0.32),
+        inset 0 0 0 1px rgba(248, 248, 242, 0.04);
+      animation: pop 160ms ease-out both;
+    }
+
+    .message.alert {
+      border-left-color: var(--pink);
+      background:
+        linear-gradient(90deg, rgba(255, 121, 198, 0.28), transparent 48%),
+        var(--bg-strong);
+    }
+
+    .status {
+      color: var(--muted);
+      border-left-color: var(--orange);
+      font-size: clamp(13px, 1.35vw, 18px);
+      font-weight: 750;
+      opacity: 0.92;
+    }
+
+    .name {
+      color: var(--cyan);
+      font-weight: 950;
+      text-shadow:
+        0 2px 3px var(--shadow),
+        0 0 8px rgba(139, 233, 253, 0.45);
+    }
+
+    .colon {
+      color: var(--muted);
+      margin-right: 0.18em;
+    }
+
+    .body {
+      color: var(--text);
+    }
+
+    .mention {
+      color: #282a36;
+      background: var(--yellow);
+      border-radius: 5px;
+      padding: 0.03em 0.22em;
+      font-weight: 950;
+      text-shadow: none;
+    }
+
+    .emote {
+      width: calc(var(--font-size) * 1.45);
+      height: calc(var(--font-size) * 1.45);
+      max-width: 52px;
+      max-height: 52px;
+      vertical-align: middle;
+      filter:
+        drop-shadow(0 2px 2px rgba(0, 0, 0, 0.9))
+        drop-shadow(0 0 4px rgba(189, 147, 249, 0.38));
+    }
+
+    @keyframes pop {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.985);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @media (max-width: 420px) {
+      :root {
+        --font-size: clamp(16px, 4.8vw, 22px);
+      }
+
+      body {
+        padding: 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main id="chat" aria-live="polite"></main>
+
+  <script>
+    const CONFIG = {
+      channel: "biotachyonic",
+      maxMessages: 18,
+      soundEnabled: true,
+      soundVolume: 0.55,
+      soundCooldownMs: 450,
+      reconnectBaseMs: 1200,
+      reconnectMaxMs: 15000,
+      showConnectionStatus: true,
+      highlightMentionsOf: ["biotachyonic"]
+    };
+
+    const chatEl = document.getElementById("chat");
+    const colorPool = [
+      "#8be9fd",
+      "#50fa7b",
+      "#ff79c6",
+      "#bd93f9",
+      "#f1fa8c",
+      "#ffb86c",
+      "#ff5555"
+    ];
+
+    let ws = null;
+    let reconnectAttempt = 0;
+    let lastSoundAt = 0;
+    let audioCtx = null;
+    const seenIds = new Set();
+
+    function connect() {
+      ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+
+      ws.addEventListener("open", () => {
+        reconnectAttempt = 0;
+        const nick = "justinfan" + Math.floor(10000 + Math.random() * 89999);
+        send("CAP REQ :twitch.tv/tags twitch.tv/commands");
+        send("PASS SCHMOOPIIE");
+        send("NICK " + nick);
+        send("JOIN #" + CONFIG.channel.toLowerCase());
+        status("Connected to #" + CONFIG.channel);
+      });
+
+      ws.addEventListener("message", (event) => {
+        String(event.data).split("\r\n").forEach(handleLine);
+      });
+
+      ws.addEventListener("close", scheduleReconnect);
+      ws.addEventListener("error", () => {
+        status("Chat connection error");
+        try {
+          ws.close();
+        } catch (error) {
+          scheduleReconnect();
+        }
+      });
+    }
+
+    function scheduleReconnect() {
+      const delay = Math.min(
+        CONFIG.reconnectMaxMs,
+        CONFIG.reconnectBaseMs * Math.pow(1.7, reconnectAttempt++)
+      );
+      status("Reconnecting in " + Math.round(delay / 1000) + "s");
+      setTimeout(connect, delay);
+    }
+
+    function send(message) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(message + "\r\n");
+      }
+    }
+
+    function handleLine(line) {
+      if (!line) {
+        return;
+      }
+
+      if (line.startsWith("PING")) {
+        send("PONG :tmi.twitch.tv");
+        return;
+      }
+
+      const parsed = parseIrc(line);
+      if (!parsed || parsed.command !== "PRIVMSG") {
+        return;
+      }
+
+      const stableId = parsed.tags["source-id"] || parsed.tags.id || line;
+      if (seenIds.has(stableId)) {
+        return;
+      }
+      seenIds.add(stableId);
+      if (seenIds.size > 250) {
+        seenIds.delete(seenIds.values().next().value);
+      }
+
+      addMessage({
+        user: parsed.tags["display-name"] || parsed.nick || "chat",
+        color: parsed.tags.color || fallbackColor(parsed.nick || "chat"),
+        text: parsed.trailing || "",
+        emotes: parsed.tags.emotes || ""
+      });
+      playSound();
+    }
+
+    function parseIrc(line) {
+      let rest = line;
+      const tags = {};
+      let prefix = "";
+      let command = "";
+      let trailing = "";
+
+      if (rest[0] === "@") {
+        const tagEnd = rest.indexOf(" ");
+        const rawTags = rest.slice(1, tagEnd);
+        rest = rest.slice(tagEnd + 1);
+        rawTags.split(";").forEach((tag) => {
+          const splitAt = tag.indexOf("=");
+          const key = splitAt >= 0 ? tag.slice(0, splitAt) : tag;
+          const value = splitAt >= 0 ? tag.slice(splitAt + 1) : "";
+          tags[key] = decodeTag(value);
+        });
+      }
+
+      if (rest[0] === ":") {
+        const prefixEnd = rest.indexOf(" ");
+        prefix = rest.slice(1, prefixEnd);
+        rest = rest.slice(prefixEnd + 1);
+      }
+
+      const trailingAt = rest.indexOf(" :");
+      if (trailingAt >= 0) {
+        trailing = rest.slice(trailingAt + 2);
+        rest = rest.slice(0, trailingAt);
+      }
+
+      const parts = rest.split(" ");
+      command = parts[0];
+
+      return {
+        tags,
+        prefix,
+        command,
+        params: parts.slice(1),
+        trailing,
+        nick: prefix.split("!")[0]
+      };
+    }
+
+    function decodeTag(value) {
+      return value
+        .replace(/\\s/g, " ")
+        .replace(/\\:/g, ";")
+        .replace(/\\\\/g, "\\")
+        .replace(/\\r/g, "\r")
+        .replace(/\\n/g, "\n");
+    }
+
+    function addMessage(message) {
+      const row = document.createElement("div");
+      row.className = "message";
+      row.append(nameNode(message.user, message.color));
+      row.append(Object.assign(document.createElement("span"), {
+        className: "colon",
+        textContent: ": "
+      }));
+
+      const body = document.createElement("span");
+      body.className = "body";
+      renderBody(body, message.text, message.emotes);
+      row.append(body);
+
+      if (isAlert(message.text)) {
+        row.classList.add("alert");
+      }
+
+      chatEl.append(row);
+      trimMessages();
+    }
+
+    function nameNode(user, color) {
+      const span = document.createElement("span");
+      span.className = "name";
+      span.textContent = user;
+      span.style.color = color || fallbackColor(user);
+      return span;
+    }
+
+    function renderBody(container, text, emotes) {
+      const fragments = emoteFragments(text, emotes);
+      if (!fragments.length) {
+        appendTextWithMentions(container, text);
+        return;
+      }
+
+      fragments.forEach((fragment) => {
+        if (fragment.type === "text") {
+          appendTextWithMentions(container, fragment.value);
+          return;
+        }
+
+        const img = document.createElement("img");
+        img.className = "emote";
+        img.alt = fragment.value;
+        img.src = "https://static-cdn.jtvnw.net/emoticons/v2/" +
+          encodeURIComponent(fragment.id) + "/default/dark/2.0";
+        container.append(img);
+      });
+    }
+
+    function emoteFragments(text, emotes) {
+      if (!emotes) {
+        return [];
+      }
+
+      const ranges = [];
+      emotes.split("/").forEach((entry) => {
+        const [id, positions] = entry.split(":");
+        if (!id || !positions) {
+          return;
+        }
+        positions.split(",").forEach((position) => {
+          const [start, end] = position.split("-").map(Number);
+          if (Number.isFinite(start) && Number.isFinite(end)) {
+            ranges.push({ id, start, end });
+          }
+        });
+      });
+
+      ranges.sort((a, b) => a.start - b.start);
+      const fragments = [];
+      let cursor = 0;
+      ranges.forEach((range) => {
+        if (range.start > cursor) {
+          fragments.push({ type: "text", value: text.slice(cursor, range.start) });
+        }
+        fragments.push({
+          type: "emote",
+          id: range.id,
+          value: text.slice(range.start, range.end + 1)
+        });
+        cursor = range.end + 1;
+      });
+      if (cursor < text.length) {
+        fragments.push({ type: "text", value: text.slice(cursor) });
+      }
+      return fragments;
+    }
+
+    function appendTextWithMentions(container, text) {
+      const words = text.split(/(\s+)/);
+      words.forEach((word) => {
+        const clean = word.replace(/^@/, "").toLowerCase();
+        if (CONFIG.highlightMentionsOf.includes(clean)) {
+          const span = document.createElement("span");
+          span.className = "mention";
+          span.textContent = word;
+          container.append(span);
+          return;
+        }
+        container.append(document.createTextNode(word));
+      });
+    }
+
+    function playSound() {
+      if (!CONFIG.soundEnabled) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastSoundAt < CONFIG.soundCooldownMs) {
+        return;
+      }
+      lastSoundAt = now;
+
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
+
+      const start = audioCtx.currentTime;
+      const gain = audioCtx.createGain();
+      const oscA = audioCtx.createOscillator();
+      const oscB = audioCtx.createOscillator();
+
+      oscA.type = "sine";
+      oscB.type = "triangle";
+      oscA.frequency.setValueAtTime(880, start);
+      oscA.frequency.exponentialRampToValueAtTime(1320, start + 0.055);
+      oscB.frequency.setValueAtTime(1760, start);
+
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(CONFIG.soundVolume, start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+
+      oscA.connect(gain);
+      oscB.connect(gain);
+      gain.connect(audioCtx.destination);
+      oscA.start(start);
+      oscB.start(start + 0.035);
+      oscA.stop(start + 0.17);
+      oscB.stop(start + 0.14);
+    }
+
+    function status(text) {
+      if (!CONFIG.showConnectionStatus) {
+        return;
+      }
+      const row = document.createElement("div");
+      row.className = "status";
+      row.textContent = text;
+      chatEl.append(row);
+      trimMessages();
+    }
+
+    function trimMessages() {
+      while (chatEl.children.length > CONFIG.maxMessages) {
+        chatEl.firstElementChild.remove();
+      }
+    }
+
+    function fallbackColor(name) {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+      }
+      return colorPool[Math.abs(hash) % colorPool.length];
+    }
+
+    function isAlert(text) {
+      return CONFIG.highlightMentionsOf.some((name) => {
+        return text.toLowerCase().includes("@" + name.toLowerCase());
+      });
+    }
+
+    connect();
+  </script>
+</body>
+</html>

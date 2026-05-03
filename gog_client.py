@@ -180,7 +180,7 @@ class GogClient(PlatformClient):
                         tags = [str(t) for t in tags_data if t]
                 except (json.JSONDecodeError, AttributeError):
                     pass
-            return {"genres": [], "categories": [], "tags": tags, "short_description": ""}
+            return {"genres": [], "categories": [], "tags": tags, "short_description": "", "description": ""}
         except Exception as e:
             print(f"Error getting GOG metadata for {appid}: {e}")
             return super().get_store_metadata(appid)

@@ -5,8 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Steam Twitch Viewer Library</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   </head>
   <body>
+    <div class="sponsor-ribbon" role="complementary" aria-label="Sponsor" id="sponsor-ribbon">
+      <div class="shell sponsor-ribbon__inner">
+        <span class="sponsor-ribbon__label" id="sponsor-ribbon-label">Brought to you by</span>
+        <a
+          class="sponsor-ribbon__link"
+          href="https://www.twitch.tv/biotachyonic"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Watch biotachyonic on Twitch"
+          id="sponsor-ribbon-link"
+        >
+          <svg class="sponsor-ribbon__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path fill="currentColor" d="M4.265 2 2.5 6.706v15.235h5.294V24h2.97l2.353-2.06h4.235L22.94 16.06V2H4.265zm16.323 13.176-3.235 3.236h-5.294l-2.353 2.058v-2.058H5.94V3.765h14.647v11.411zM17.353 7.294h1.764v6.176h-1.764zm-4.706 0h1.765v6.176h-1.765z"/>
+          </svg>
+          <span class="sponsor-ribbon__live-dot" aria-hidden="true"></span>
+          <span class="sponsor-ribbon__name">biotachyonic</span>
+          <span class="sponsor-ribbon__cta" id="sponsor-ribbon-cta" aria-hidden="true">Watch live ↗</span>
+        </a>
+      </div>
+    </div>
     <header class="topbar">
       <div class="shell topbar__inner">
         <div>
@@ -14,14 +35,45 @@
           <h1>Twitch Viewer Dashboard</h1>
         </div>
         <form class="controls" action="{{ url_for('index') }}" method="get">
+          <input type="hidden" name="deferred_platforms" id="deferred-platforms-input">
+          <label class="field field--search">
+            <span>Search</span>
+            <div class="search-box">
+              <select id="search-category" aria-label="Search category">
+                <option value="tags">Tags</option>
+                <option value="title">Title</option>
+                <option value="description">Description</option>
+              </select>
+              <input type="search" id="search-query" aria-label="Search query" placeholder="Search games">
+            </div>
+          </label>
           <label class="field">
             <span>Sort</span>
             <select id="sort-select" name="sort">
-              <option value="discovery" selected>Discovery score</option>
+              <option value="discovery" selected>Discovery</option>
+              <option value="viewers">Viewers</option>
+              <option value="streamers">Streamers</option>
+              <option value="average">Avg/stream</option>
+              <option value="release_date">Release date</option>
               <option value="recent">Recently played</option>
               <option value="installed">Installed</option>
-              <option value="viewers">Viewer count</option>
+              <option value="title">Title</option>
             </select>
+          </label>
+          <label class="field field--direction">
+            <span>Order</span>
+            <select id="sort-direction">
+              <option value="desc" selected>Desc</option>
+              <option value="asc">Asc</option>
+            </select>
+          </label>
+          <label class="field field--slider">
+            <span>Max streamers <strong id="streamer-filter-label">Any</strong></span>
+            <input type="range" id="streamer-filter" min="2" max="100" value="100" step="1">
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="sale-filter">
+            <span>On sale</span>
           </label>
           <label class="toggle">
             <input type="checkbox" name="include_zero" value="1" {% if include_zero %}checked{% endif %}>
@@ -31,6 +83,8 @@
             <input type="checkbox" name="force_refresh" value="1" {% if force_refresh %}checked{% endif %}>
             <span>Force API refresh</span>
           </label>
+          <a class="button-link secondary-button settings-button" href="{{ url_for('settings') }}">Settings</a>
+          <button type="button" id="current-game-button" class="button current-game-button" disabled>No game running</button>
           <button type="submit">Refresh</button>
         </form>
       </div>
@@ -84,22 +138,60 @@
           </section>
         {% endif %}
 
+        {% set platform_display_names = {
+          'steam': 'Steam',
+          'gog': 'GOG',
+          'epic': 'Epic',
+          'nes': 'NES',
+          'snes': 'SNES',
+          'n64': 'N64',
+          'gamecube': 'GameCube',
+          'gameboy': 'Game Boy',
+          'gbc': 'Game Boy Color',
+          'gba': 'Game Boy Advance',
+          'genesis': 'Genesis',
+          'saturn': 'Saturn',
+          'dreamcast': 'Dreamcast',
+          'ps1': 'PS1',
+          'ps2': 'PS2',
+          '3do': '3DO'
+        } %}
         <section class="stats" aria-label="Library stats">
           <div class="stat">
             <span>Owned</span>
             <strong id="stat-owned">{{ stats.total_owned or 0 }}</strong>
+            <div class="stat-platforms" id="stat-owned-platforms">
+              {% for platform, count in (stats.platform_owned or {}).items() if count %}
+                <button type="button" class="stat-platform stat-platform-{{ platform }}" data-platform-filter="{{ platform }}" aria-pressed="true">{{ platform_display_names.get(platform, platform|capitalize) }} {{ count }}</button>
+              {% endfor %}
+            </div>
           </div>
           <div class="stat">
             <span>Processed</span>
             <strong id="stat-processed">{{ stats.processed or 0 }}</strong>
+            <div class="stat-platforms" id="stat-processed-platforms">
+              {% for platform, count in (stats.platform_processed or {}).items() if count %}
+                <button type="button" class="stat-platform stat-platform-{{ platform }}" data-platform-filter="{{ platform }}" aria-pressed="true">{{ platform_display_names.get(platform, platform|capitalize) }} {{ count }}</button>
+              {% endfor %}
+            </div>
           </div>
           <div class="stat">
             <span>Twitch Matches</span>
             <strong id="stat-matched">{{ stats.matched or 0 }}</strong>
+            <div class="stat-platforms" id="stat-matched-platforms">
+              {% for platform, count in (stats.platform_matched or {}).items() if count %}
+                <button type="button" class="stat-platform stat-platform-{{ platform }}" data-platform-filter="{{ platform }}" aria-pressed="true">{{ platform_display_names.get(platform, platform|capitalize) }} {{ count }}</button>
+              {% endfor %}
+            </div>
           </div>
           <div class="stat">
             <span>Shown</span>
             <strong id="stat-shown">{{ stats.shown or 0 }}</strong>
+            <div class="stat-platforms" id="stat-shown-platforms">
+              {% for platform, count in (stats.platform_shown or {}).items() if count %}
+                <button type="button" class="stat-platform stat-platform-{{ platform }}" data-platform-filter="{{ platform }}" aria-pressed="true">{{ platform_display_names.get(platform, platform|capitalize) }} {{ count }}</button>
+              {% endfor %}
+            </div>
           </div>
         </section>
 
@@ -109,11 +201,179 @@
           <span id="stream-status">Cache ready.</span>
         </section>
 
+        <nav class="tabs" id="tab-nav">
+          <button class="tab tab--active" data-tab="library">Library</button>
+          <button class="tab" data-tab="data">Data</button>
+          <button class="tab" data-tab="opportunities">Opportunities</button>
+        </nav>
+
+        <div id="tab-library" class="tab-panel">
         <section class="library" id="library" aria-label="Games with Twitch viewers"></section>
          <section class="empty" id="empty-state" {% if games or job_id %}hidden{% endif %}>
           <h2 id="empty-title">No games found</h2>
           <p id="empty-text">No live viewer matches found.</p>
-        </section>
+          <div class="empty-platform-filters" id="empty-platform-filters" hidden>
+            <span class="empty-platform-filters__label">Disabled platforms:</span>
+            <div class="empty-platform-filters__badges" id="empty-platform-filter-badges"></div>
+            <button type="button" class="secondary-button empty-platform-filters__enable" id="enable-all-platforms">Enable all</button>
+          </div>
+         </section>
+        </div>
+
+        <div id="tab-data" class="tab-panel" hidden>
+          <div class="data-controls">
+            <label class="field history-game-field">
+              <span>Game</span>
+              <div class="history-game-search" id="history-game-search-box">
+                <input
+                  type="text"
+                  id="history-game-search"
+                  class="history-game-search__input"
+                  placeholder="Search games…"
+                  autocomplete="off"
+                  spellcheck="false"
+                  role="combobox"
+                  aria-controls="history-game-results"
+                  aria-autocomplete="list"
+                  aria-expanded="false">
+                <button
+                  type="button"
+                  class="history-game-search__clear"
+                  id="history-game-clear"
+                  aria-label="Clear selection"
+                  hidden>&times;</button>
+                <ul
+                  class="history-game-results"
+                  id="history-game-results"
+                  role="listbox"
+                  hidden></ul>
+              </div>
+            </label>
+            <div class="time-pills" id="time-pills">
+              <button class="time-pill" data-days="1">24h</button>
+              <button class="time-pill time-pill--active" data-days="7">7d</button>
+              <button class="time-pill" data-days="30">30d</button>
+              <button class="time-pill" data-days="0">All</button>
+            </div>
+            <button class="record-button" id="record-now-button" title="Record a snapshot now">Record Now</button>
+            <div class="status-badge" id="collector-status">
+              <span class="status-dot status-dot--idle"></span>
+              <span class="status-text">Collector idle</span>
+            </div>
+          </div>
+
+          <div class="data-charts">
+            <div class="chart-container">
+              <h3>Viewer & Stream Counts Over Time</h3>
+              <canvas id="chart-viewers"></canvas>
+            </div>
+            <div class="chart-container">
+              <h3>Discovery Score Trend</h3>
+              <canvas id="chart-discovery"></canvas>
+            </div>
+          </div>
+
+          <div class="chart-container chart-container--full">
+            <h3>All Games &mdash; Discovery Score Comparison</h3>
+            <div class="chart-legend-hint">Click a card to toggle a game. Use the buttons to launch or update its stream info.</div>
+            <div class="all-games-filters">
+              <label class="toggle">
+                <input type="checkbox" id="all-games-now-toggle" checked>
+                <span>Best for now</span>
+              </label>
+              <label class="field field--inline field--slider-inline">
+                <span>Window <strong id="all-games-window-label">&plusmn;1h</strong></span>
+                <input type="range" id="all-games-window-slider" min="15" max="720" step="15" value="60">
+              </label>
+              <label class="field field--inline">
+                <span>Min discovery</span>
+                <input type="number" id="all-games-min-discovery" min="0" max="1" step="0.05" value="0.3" style="width: 70px;">
+              </label>
+              <label class="field field--inline">
+                <span>Max streamers</span>
+                <input type="number" id="all-games-max-streams" min="0" step="5" value="60" style="width: 70px;">
+              </label>
+              <label class="field field--inline">
+                <span>Top N</span>
+                <input type="number" id="all-games-top-n" min="1" step="1" value="12" style="width: 60px;">
+              </label>
+              <span class="all-games-filter-status" id="all-games-filter-status"></span>
+            </div>
+            <div class="all-games-chart-row">
+              <div class="all-games-chart-canvas">
+                <canvas id="chart-all-games"></canvas>
+              </div>
+              <div class="all-games-legend" id="all-games-legend"></div>
+            </div>
+          </div>
+
+          <div class="chart-container chart-container--full">
+            <h3>Best Times to Stream &mdash; Discovery Score Heatmap</h3>
+            <div class="heatmap-wrapper">
+              <div class="heatmap-grid" id="heatmap-grid">
+                <p class="heatmap-empty">Select a game and time range to see the heatmap.</p>
+              </div>
+              <div class="heatmap-legend">
+                <span>Low</span>
+                <div class="heatmap-legend-bar"></div>
+                <span>High</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="tab-opportunities" class="tab-panel" hidden>
+          <div class="opportunities-intro">
+            <h3>Empty categories with proven demand</h3>
+            <p>Games whose latest snapshot had <strong>0 streamers</strong>, but that historically attract viewers. The viewers-per-stream filter strips out whale-driven categories where the audience came for one specific creator.</p>
+          </div>
+          <div class="all-games-filters opportunities-filters">
+            <label class="field field--inline">
+              <span>Min peak viewers</span>
+              <input type="number" id="opp-min-peak" min="0" step="10" value="100" style="width: 80px;">
+            </label>
+            <label class="field field--inline">
+              <span>Max viewers/stream</span>
+              <input type="number" id="opp-max-vps" min="0" step="10" value="200" style="width: 80px;">
+            </label>
+            <label class="field field--inline">
+              <span>Min live %</span>
+              <input type="number" id="opp-min-live" min="0" max="1" step="0.05" value="0.2" style="width: 70px;">
+            </label>
+            <label class="field field--inline">
+              <span>Sort by</span>
+              <select id="opp-sort">
+                <option value="avg_viewers_when_live" selected>Avg viewers when live</option>
+                <option value="peak_viewers">Peak viewers</option>
+                <option value="live_fraction">Live %</option>
+              </select>
+            </label>
+            <label class="field field--inline">
+              <span>Limit</span>
+              <input type="number" id="opp-limit" min="1" step="5" value="50" style="width: 70px;">
+            </label>
+            <button type="button" class="record-button" id="opp-refresh">Refresh</button>
+            <span class="all-games-filter-status" id="opp-status"></span>
+          </div>
+          <div class="opportunities-table-wrapper">
+            <table class="opportunities-table" id="opportunities-table">
+              <thead>
+                <tr>
+                  <th>Game</th>
+                  <th class="num">Peak</th>
+                  <th class="num">Avg V (live)</th>
+                  <th class="num">V / Stream</th>
+                  <th class="num">Live %</th>
+                  <th class="num">Snaps</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="opportunities-tbody">
+                <tr><td colspan="7" class="opportunities-empty">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </main>
     </div>
 
@@ -128,6 +388,8 @@
         </div>
 
         <input type="hidden" name="game_id" id="modal-game-id">
+        <input type="hidden" name="appid" id="modal-appid">
+        <input type="hidden" name="platform" id="modal-platform">
         {% if include_zero %}
           <input type="hidden" name="include_zero" value="1">
         {% endif %}
@@ -141,6 +403,17 @@
           <span>Title</span>
           <input type="text" name="title" id="modal-title" maxlength="140" required>
         </label>
+
+        <div class="modal-field modal-field--title-ai">
+          <span>Title source</span>
+          <div class="title-mode-toggle">
+            <label class="title-mode-radio"><input type="radio" name="title-mode" value="default" checked> Default</label>
+            <label class="title-mode-radio" id="title-mode-generated-label"><input type="radio" name="title-mode" value="generated" disabled> Generated</label>
+            <button type="button" class="ai-tags-button" id="ai-title-button" title="Generate an SEO-friendly Twitch title">Generate SEO title</button>
+          </div>
+          <textarea id="ai-title-context" class="ai-title-context" rows="2" maxlength="400" aria-label="Optional title-generation context" placeholder="Optional context for the LLM, e.g. 'farming iron, base build, hardcore mode'"></textarea>
+          <small class="muted title-preview" id="ai-title-preview"></small>
+        </div>
 
         <label class="modal-field modal-field--short">
           <span>Language</span>
@@ -167,33 +440,212 @@
       </form>
     </dialog>
 
+    {% if is_first_run %}
+    <dialog class="onboarding-modal" id="onboarding-modal">
+      <form class="onboarding-modal__panel" id="onboarding-form">
+        <div class="onboarding-modal__header">
+          <div>
+            <p class="eyebrow">Welcome to Steam Twitch Viewer Library</p>
+            <h2>First-Time Setup</h2>
+          </div>
+        </div>
+
+        <div class="onboarding-steps">
+          <div class="onboarding-step-indicator" aria-label="Setup progress">
+            {% for section in onboarding_sections %}
+              <button type="button" class="onboarding-step-dot{% if loop.first %} onboarding-step-dot--active{% endif %}" data-onboarding-step="{{ loop.index0 }}" aria-label="Step {{ loop.index }}: {{ section.title }}">{{ loop.index }}</button>
+            {% endfor %}
+          </div>
+
+          <div class="onboarding-step-panels">
+            {% for section in onboarding_sections %}
+              <div class="onboarding-step-panel{% if loop.first %} onboarding-step-panel--active{% endif %}" data-onboarding-panel="{{ loop.index0 }}">
+                <div class="onboarding-step-panel__content">
+                  <div class="onboarding-step-panel__heading">
+                    <h3>{{ section.title }}</h3>
+                    <p>{{ section.description }}</p>
+                    {% if section.title == "Twitch" %}
+                      <p>Paste the OAuth redirect URL below into your Twitch application's OAuth Redirect URLs list. The default is <code>{{ default_twitch_redirect_uri }}</code> and uses HTTPS because Twitch rejects non-HTTPS redirect URLs during application registration.</p>
+                      <p>Your browser may show a certificate warning for this local HTTPS address. That is expected for a local self-signed certificate; continue to localhost to finish Twitch setup.</p>
+                      <p>When creating the Twitch app, keep the client type set to <strong>Confidential</strong>. After creating it, open Manage and copy the <strong>Client ID</strong> value into this app, then click New Secret and copy that secret here.</p>
+                    {% endif %}
+                  </div>
+
+                  <div class="settings-grid">
+                    {% for field in section.fields %}
+                      {% if field.type == "checkbox_group" %}
+                        <fieldset class="settings-field settings-field--group">
+                          <legend>
+                            {{ field.label }}
+                            {% if field.required %}<em>Required</em>{% endif %}
+                            {% if field.link %}<a class="settings-field__link" href="{{ field.link }}" target="_blank" rel="noopener noreferrer">{{ field.link_label or "Open" }}</a>{% endif %}
+                          </legend>
+                          <div class="settings-checkbox-grid">
+                            {% for option in field.options %}
+                              <label class="settings-check">
+                                <input type="checkbox" name="{{ field.name }}" value="{{ option.value }}" {% if option.checked %}checked{% endif %}>
+                                <span>{{ option.label }}</span>
+                              </label>
+                            {% endfor %}
+                          </div>
+                          {% if field.help %}<small>{{ field.help }}</small>{% endif %}
+                        </fieldset>
+                      {% elif field.type == "checkbox" %}
+                        <label class="settings-field settings-field--checkbox" for="{{ field.name }}">
+                          <span>
+                            {{ field.label }}
+                            {% if field.required %}<em>Required</em>{% endif %}
+                            {% if field.link %}<a class="settings-field__link" href="{{ field.link }}" target="_blank" rel="noopener noreferrer">{{ field.link_label or "Open" }}</a>{% endif %}
+                          </span>
+                          <input type="checkbox" id="{{ field.name }}" name="{{ field.name }}" value="1" {% if field.checked %}checked{% endif %}>
+                          {% if field.help %}<small>{{ field.help }}</small>{% endif %}
+                        </label>
+                      {% else %}
+                        <div class="settings-field">
+                          <label class="settings-field__label" for="{{ field.name }}">
+                            {{ field.label }}
+                            {% if field.required %}<em>Required</em>{% endif %}
+                            {% if field.link %}<a class="settings-field__link" href="{{ field.link }}" target="_blank" rel="noopener noreferrer">{{ field.link_label or "Open" }}</a>{% endif %}
+                          </label>
+                          {% if field.type == "directory" %}
+                            <div class="directory-input">
+                              <input
+                                type="text"
+                                id="{{ field.name }}"
+                                name="{{ field.name }}"
+                                value="{{ field.value }}"
+                                readonly
+                                autocomplete="off">
+                              <button
+                                type="button"
+                                class="secondary-button directory-input__button"
+                                data-directory-picker="{{ field.name }}"
+                                data-path-filename="{{ field.path_filename or '' }}">Browse</button>
+                            </div>
+                          {% elif field.type == "copyable_url" %}
+                            <div class="copyable-input">
+                              <input
+                                type="url"
+                                id="{{ field.name }}"
+                                name="{{ field.name }}"
+                                value="{{ field.value }}"
+                                placeholder="{{ default_twitch_redirect_uri }}"
+                                autocomplete="off">
+                              <button type="button" class="secondary-button copyable-input__button" data-copy-target="{{ field.name }}">Copy</button>
+                            </div>
+                            <small>Leave this as the default unless your app is running somewhere else.</small>
+                          {% elif field.check_steam_username %}
+                            <div class="steam-username-input">
+                              <input
+                                type="text"
+                                id="{{ field.name }}"
+                                name="{{ field.name }}"
+                                value="{{ field.value }}"
+                                placeholder="{{ field.placeholder or 'Steam profile name or ID' }}"
+                                autocomplete="off">
+                              <button type="button" class="secondary-button steam-username-input__button onboarding-check-steam">Check Username</button>
+                            </div>
+                            <small class="settings-check-result" id="onboarding-steam-result" aria-live="polite"></small>
+                          {% else %}
+                            <input
+                              type="{{ 'password' if field.secret else (field.type or 'text') }}"
+                              id="{{ field.name }}"
+                              name="{{ field.name }}"
+                              value="{{ field.value }}"
+                              {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% elif field.secret and field.has_value %}placeholder="Saved. Leave blank to keep current value."{% endif %}
+                              {% if field.type == "number" %}step="1"{% endif %}
+                              autocomplete="{{ 'new-password' if field.secret else 'off' }}">
+                          {% endif %}
+                          {% if field.help %}<small>{{ field.help }}</small>{% endif %}
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="onboarding-modal__actions">
+          <small class="onboarding-feedback" id="onboarding-feedback" aria-live="polite"></small>
+          <button type="button" class="secondary-button" id="onboarding-back" hidden>Back</button>
+          <button type="button" class="button" id="onboarding-next">Save &amp; Continue</button>
+          <button type="button" class="button" id="onboarding-done" hidden>Done</button>
+        </div>
+      </form>
+    </dialog>
+    {% endif %}
+
     <script>
       const initialGames = {{ games|tojson }};
       const jobId = {{ job_id|tojson }};
       const channelInfo = {{ (channel_info or {})|tojson }};
       const canUpdateStream = {{ "true" if can_update_stream else "false" }};
+      const PLATFORM_DISPLAY_NAMES = {
+        steam: 'Steam',
+        gog: 'GOG',
+        epic: 'Epic',
+        nes: 'NES',
+        snes: 'SNES',
+        n64: 'N64',
+        gamecube: 'GameCube',
+        gameboy: 'Game Boy',
+        gbc: 'Game Boy Color',
+        gba: 'Game Boy Advance',
+        genesis: 'Genesis',
+        saturn: 'Saturn',
+        dreamcast: 'Dreamcast',
+        ps1: 'PS1',
+        ps2: 'PS2',
+        '3do': '3DO'
+      };
+      const PLATFORM_FILTER_STORAGE_KEY = 'best-game-disabled-platform-filters';
       const library = document.getElementById('library');
+      const controlsForm = document.querySelector('.controls');
+      const deferredPlatformsInput = document.getElementById('deferred-platforms-input');
        const emptyState = document.getElementById('empty-state');
        const emptyTitle = document.getElementById('empty-title');
        const emptyText = document.getElementById('empty-text');
+       const emptyPlatformFilters = document.getElementById('empty-platform-filters');
+       const emptyPlatformFilterBadges = document.getElementById('empty-platform-filter-badges');
+       const enableAllPlatformsButton = document.getElementById('enable-all-platforms');
       const streamStatus = document.getElementById('stream-status');
       const sortSelect = document.getElementById('sort-select');
+      const sortDirection = document.getElementById('sort-direction');
+      const searchCategory = document.getElementById('search-category');
+      const searchQuery = document.getElementById('search-query');
+      const streamerFilter = document.getElementById('streamer-filter');
+      const streamerFilterLabel = document.getElementById('streamer-filter-label');
+      const saleFilter = document.getElementById('sale-filter');
       const modal = document.getElementById('stream-modal');
       const streamForm = document.getElementById('stream-update-form');
       const streamSubmitButton = document.getElementById('stream-submit-button');
       const noticeRegion = document.getElementById('notice-region');
       const cardsByAppid = new Map();
       const allGamesByAppid = new Map();
+      const disabledPlatformFilters = new Set(loadDisabledPlatformFilters());
       let activeStreamButton = null;
       let pollOffset = 0;
+      let jobDone = !jobId;
       const fields = {
         gameId: document.getElementById('modal-game-id'),
+        appid: document.getElementById('modal-appid'),
+        platform: document.getElementById('modal-platform'),
         category: document.getElementById('modal-category'),
         title: document.getElementById('modal-title'),
         language: document.getElementById('modal-language'),
         tags: document.getElementById('modal-tags'),
         branded: document.getElementById('modal-branded')
       };
+
+      function gameKey(appid, platform = 'steam') {
+        return `${platform || 'steam'}:${String(appid || '')}`;
+      }
+
+      function gameKeyFromGame(game) {
+        return gameKey(game && game.appid, (game && game.platform) || 'steam');
+      }
 
       function compactNumber(value) {
         const number = Number(value) || 0;
@@ -202,10 +654,138 @@
         return number.toLocaleString();
       }
 
+      function normalizeSearch(value) {
+        return String(value || '').toLowerCase();
+      }
+
+      function uniqueCsv(values) {
+        const seen = new Set();
+        const tags = [];
+        values.flatMap(value => String(value || '').split(',')).forEach(value => {
+          const tag = value.trim();
+          const key = tag.toLowerCase();
+          if (tag && !seen.has(key)) {
+            tags.push(tag);
+            seen.add(key);
+          }
+        });
+        return tags.join(', ');
+      }
+
       function timestampLabel(value) {
         const seconds = Number(value) || 0;
         if (!seconds) return 'Never played';
         return new Date(seconds * 1000).toLocaleDateString();
+      }
+
+      function releaseDateLabel(game) {
+        if (game.release_coming_soon) return game.release_date ? `Coming ${game.release_date}` : 'Coming soon';
+        return game.release_date || 'Release date unknown';
+      }
+
+      function platformLabel(platform) {
+        const key = platform || 'steam';
+        return PLATFORM_DISPLAY_NAMES[key] || key.charAt(0).toUpperCase() + key.slice(1);
+      }
+
+      function loadDisabledPlatformFilters() {
+        try {
+          const value = window.localStorage.getItem(PLATFORM_FILTER_STORAGE_KEY);
+          const platforms = value ? JSON.parse(value) : [];
+          return Array.isArray(platforms) ? platforms : [];
+        } catch (error) {
+          return [];
+        }
+      }
+
+      function saveDisabledPlatformFilters() {
+        try {
+          window.localStorage.setItem(
+            PLATFORM_FILTER_STORAGE_KEY,
+            JSON.stringify(Array.from(disabledPlatformFilters))
+          );
+        } catch (error) {
+          // Ignore storage failures; the in-memory filter still works for this page.
+        }
+        syncDeferredPlatformsInput();
+      }
+
+      function deferredPlatformParam() {
+        return Array.from(disabledPlatformFilters).sort().join(',');
+      }
+
+      function syncDeferredPlatformsInput() {
+        const value = deferredPlatformParam();
+        if (deferredPlatformsInput) {
+          deferredPlatformsInput.value = value;
+        }
+        document.cookie = 'deferred_platforms=' + encodeURIComponent(value) + '; path=/; max-age=31536000; SameSite=Lax';
+      }
+
+      function platformIsVisible(platform) {
+        return !disabledPlatformFilters.has(platform || 'steam');
+      }
+
+      function syncPlatformFilterButtons() {
+        syncDeferredPlatformsInput();
+        document.querySelectorAll('[data-platform-filter]').forEach((button) => {
+          const platform = button.dataset.platformFilter || 'steam';
+          const isVisible = platformIsVisible(platform);
+          button.classList.toggle('stat-platform--off', !isVisible);
+          button.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+          button.title = (isVisible ? 'Hide ' : 'Show ') + platformLabel(platform) + ' games';
+        });
+      }
+
+      function togglePlatformFilter(platform) {
+        const key = platform || 'steam';
+        if (platformIsVisible(key)) {
+          disabledPlatformFilters.add(key);
+        } else {
+          disabledPlatformFilters.delete(key);
+        }
+        saveDisabledPlatformFilters();
+        syncPlatformFilterButtons();
+        applyView();
+        updateDock();
+      }
+
+      function enableAllPlatformFilters() {
+        if (disabledPlatformFilters.size === 0) return;
+        disabledPlatformFilters.clear();
+        saveDisabledPlatformFilters();
+        syncPlatformFilterButtons();
+        applyView();
+        updateDock();
+      }
+
+      function disabledPlatformsWithCards() {
+        const presentPlatforms = new Set();
+        cardsByAppid.forEach((card) => {
+          presentPlatforms.add(card.dataset.platform || 'steam');
+        });
+        return Array.from(disabledPlatformFilters)
+          .filter((platform) => presentPlatforms.has(platform))
+          .sort((a, b) => platformLabel(a).localeCompare(platformLabel(b)));
+      }
+
+      function renderEmptyPlatformFilters(platforms) {
+        if (!emptyPlatformFilters || !emptyPlatformFilterBadges) return;
+        emptyPlatformFilterBadges.innerHTML = '';
+        emptyPlatformFilters.hidden = platforms.length === 0;
+        if (platforms.length === 0) return;
+
+        platforms.forEach((platform) => {
+          const pill = document.createElement('button');
+          pill.type = 'button';
+          pill.className = `stat-platform stat-platform-${platform} stat-platform--off`;
+          pill.dataset.platformFilter = platform;
+          pill.setAttribute('aria-pressed', 'false');
+          pill.textContent = platformLabel(platform);
+          pill.title = 'Show ' + platformLabel(platform) + ' games';
+          emptyPlatformFilterBadges.appendChild(pill);
+        });
+        syncPlatformFilterButtons();
       }
 
       function showNotice(category, message) {
@@ -220,12 +800,35 @@
         noticeRegion.replaceChildren(notice);
       }
 
+      function renderPlatformPills(containerId, platformCounts) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        if (!platformCounts) return;
+        Object.entries(platformCounts).forEach(([platform, count]) => {
+          if (!count) return;
+          const pill = document.createElement('button');
+          pill.type = 'button';
+          pill.className = `stat-platform stat-platform-${platform}`;
+          pill.dataset.platformFilter = platform;
+          pill.setAttribute('aria-pressed', 'true');
+          const label = platformLabel(platform);
+          pill.textContent = label + ' ' + compactNumber(count);
+          container.appendChild(pill);
+        });
+        syncPlatformFilterButtons();
+      }
+
       function updateStats(stats) {
         if (!stats) return;
         document.getElementById('stat-owned').textContent = compactNumber(stats.total_owned);
         document.getElementById('stat-processed').textContent = compactNumber(stats.processed);
         document.getElementById('stat-matched').textContent = compactNumber(stats.matched);
         document.getElementById('stat-shown').textContent = compactNumber(stats.shown);
+        renderPlatformPills('stat-owned-platforms', stats.platform_owned);
+        renderPlatformPills('stat-processed-platforms', stats.platform_processed);
+        renderPlatformPills('stat-matched-platforms', stats.platform_matched);
+        renderPlatformPills('stat-shown-platforms', stats.platform_shown);
       }
 
       function addMeta(container, text) {
@@ -234,21 +837,59 @@
         container.appendChild(item);
       }
 
+      function gameImageCandidates(game) {
+        const seen = new Set();
+        return [game.platform_image_url, game.steam_header_url, game.twitch_box_art_url]
+          .filter(Boolean)
+          .filter((url) => {
+            if (seen.has(url)) return false;
+            seen.add(url);
+            return true;
+          });
+      }
+
+      function setGameImage(image, game) {
+        const candidates = gameImageCandidates(game);
+        let index = 0;
+        image.alt = `${game.name} ${game.platform || 'Steam'} image`;
+        image.loading = 'lazy';
+        image.onerror = () => {
+          index += 1;
+          if (index < candidates.length) {
+            image.src = candidates[index];
+          } else {
+            image.removeAttribute('src');
+            image.classList.add('is-missing');
+          }
+        };
+        if (candidates.length) {
+          image.src = candidates[index];
+        } else {
+          image.classList.add('is-missing');
+        }
+      }
+
        function createCard(game) {
          const article = document.createElement('article');
          article.className = 'game-card';
          article.dataset.appid = game.appid;
+         article.dataset.platform = game.platform || 'steam';
          article.dataset.viewerCount = game.viewer_count || 0;
+         article.dataset.averageViewers = game.adjusted_average_viewers_per_stream || game.average_viewers_per_stream || 0;
+         article.dataset.streamCount = game.stream_count || 0;
          article.dataset.lastPlayed = game.last_played || 0;
+         article.dataset.releaseTimestamp = game.release_timestamp || 0;
+         article.dataset.onSale = game.is_on_sale ? '1' : '0';
          article.dataset.installed = game.installed ? '1' : '0';
          article.dataset.discoveryScore = game.discovery_score || 0;
+         article.dataset.title = normalizeSearch(game.name || '');
+         article.dataset.description = normalizeSearch(game.steam_description || game.platform_description || game.steam_short_description || game.platform_short_description || '');
+         article.dataset.tags = normalizeSearch((game.all_tags || []).join(' '));
 
          const imageWrap = document.createElement('div');
         imageWrap.className = 'game-card__image';
         const image = document.createElement('img');
-        image.src = game.platform_image_url || game.steam_header_url;
-        image.alt = `${game.name} ${game.platform || 'Steam'} header`;
-        image.loading = 'lazy';
+        setGameImage(image, game);
         imageWrap.appendChild(image);
 
         const body = document.createElement('div');
@@ -266,7 +907,7 @@
           if (game.platform && game.platform !== 'steam') {
             const platformBadge = document.createElement('span');
             platformBadge.className = `platform-badge platform-badge-${game.platform}`;
-            platformBadge.textContent = game.platform.toUpperCase();
+            platformBadge.textContent = (PLATFORM_DISPLAY_NAMES[game.platform] || game.platform).toUpperCase();
             titleRow.append(title, platformBadge);
           } else {
             titleRow.appendChild(title);
@@ -281,15 +922,30 @@
           streamPill.className = 'stream-pill';
           streamPill.textContent = compactNumber(game.stream_count) + ' streamers';
           streamPill.title = (game.stream_count || 0) + ' active streams';
+          const averagePill = document.createElement('span');
+          averagePill.className = 'average-pill';
+          const adjustedAverage = Number(game.adjusted_average_viewers_per_stream || 0);
+          const rawAverage = Number(game.average_viewers_per_stream || 0);
+          averagePill.textContent = adjustedAverage.toFixed(1) + ' avg/stream';
+          averagePill.title = rawAverage.toFixed(1) + ' raw average, ' + adjustedAverage.toFixed(1) + ' whale-adjusted average';
           const discoveryPill = document.createElement('span');
           discoveryPill.className = 'discovery-pill';
           discoveryPill.textContent = 'Discovery: ' + (game.discovery_score || 0).toFixed(2);
-          pillStack.append(viewerPill, streamPill, discoveryPill);
+          pillStack.append(viewerPill, streamPill, averagePill, discoveryPill);
+          if (game.is_on_sale) {
+            const salePill = document.createElement('span');
+            salePill.className = 'sale-pill';
+            salePill.textContent = `${game.discount_percent || 0}% off`;
+            salePill.title = [game.price_initial_formatted, game.price_final_formatted].filter(Boolean).join(' -> ');
+            pillStack.appendChild(salePill);
+          }
           heading.append(titleRow, pillStack);
 
         const meta = document.createElement('div');
         meta.className = 'meta';
         addMeta(meta, `${compactNumber(game.viewer_count)} live viewers`);
+        addMeta(meta, `${Number(game.adjusted_average_viewers_per_stream || 0).toFixed(1)} average viewers per non-whale stream`);
+        addMeta(meta, `Released: ${releaseDateLabel(game)}`);
         if (Number(game.playtime_hours) > 0) addMeta(meta, `${game.playtime_hours} hours played`);
         addMeta(meta, game.installed ? 'Installed' : 'Not installed');
         addMeta(meta, `Last played: ${timestampLabel(game.last_played)}`);
@@ -304,18 +960,23 @@
 
          const links = document.createElement('div');
         links.className = 'links';
-        const platformLink = document.createElement('a');
-        platformLink.href = game.platform_url || game.steam_url;
-        platformLink.target = '_blank';
-        platformLink.rel = 'noreferrer';
-        platformLink.textContent = game.platform === 'gog' ? 'GOG' : 
-                                  game.platform === 'epic' ? 'Epic' : 'Steam';
+        const storeUrl = game.platform_url || game.steam_url;
+        if (storeUrl) {
+          const platformLink = document.createElement('a');
+          platformLink.href = storeUrl;
+          platformLink.target = '_blank';
+          platformLink.rel = 'noreferrer';
+          platformLink.textContent = game.platform === 'gog' ? 'GOG' :
+                                    game.platform === 'epic' ? 'Epic' :
+                                    PLATFORM_DISPLAY_NAMES[game.platform] || 'Steam';
+          links.appendChild(platformLink);
+        }
         const twitchLink = document.createElement('a');
         twitchLink.href = game.twitch_url;
         twitchLink.target = '_blank';
         twitchLink.rel = 'noreferrer';
         twitchLink.textContent = 'Twitch';
-        links.append(platformLink, twitchLink);
+        links.appendChild(twitchLink);
 
          const launchButton = document.createElement('button');
         launchButton.type = 'button';
@@ -336,18 +997,22 @@
         streamButton.className = 'stream-button';
         streamButton.textContent = 'Update stream info';
         streamButton.dataset.streamOpen = '1';
+        streamButton.dataset.appid = game.appid || '';
+        streamButton.dataset.platform = game.platform || 'steam';
         streamButton.dataset.gameName = game.name || '';
         streamButton.dataset.twitchName = game.twitch_name || '';
         streamButton.dataset.gameId = game.twitch_game_id || '';
-        streamButton.dataset.title = channelInfo.title || `Playing ${game.name || ''}`;
-        streamButton.dataset.language = channelInfo.broadcaster_language || 'en';
-        streamButton.dataset.tags = (channelInfo.tags || []).join(', ');
+        streamButton.dataset.title = `Playing ${game.name || ''}`;
+        streamButton.dataset.language = 'en';
         streamButton.dataset.steamTags = (game.steam_tags || []).join(', ');
-        streamButton.dataset.steamDescription = game.steam_short_description || '';
-        // Platform-specific fields
+        streamButton.dataset.twitchTags = (game.twitch_tags || []).join(', ');
+        streamButton.dataset.aiTags = (game.ai_tags || []).join(', ');
+        streamButton.dataset.allTags = (game.all_tags || []).join(', ');
+        streamButton.dataset.steamDescription = game.steam_description || game.steam_short_description || '';
         streamButton.dataset.platformTags = (game.platform_tags || game.steam_tags || []).join(', ');
-        streamButton.dataset.platformDescription = game.platform_short_description || game.steam_short_description || '';
-        streamButton.dataset.branded = channelInfo.is_branded_content ? '1' : '0';
+        streamButton.dataset.platformDescription = game.platform_description || game.platform_short_description || game.steam_description || game.steam_short_description || '';
+        streamButton.dataset.generatedTitle = game.generated_title || '';
+        streamButton.dataset.branded = '0';
         streamButton.disabled = !canUpdateStream;
 
         body.append(links, launchButton, streamButton);
@@ -355,24 +1020,115 @@
         return article;
       }
 
-        function applySort() {
+        function cardMatchesSearch(card) {
+          if (!platformIsVisible(card.dataset.platform || 'steam')) return false;
+
+          const maxStreamers = parseInt(streamerFilter.value, 10);
+          if (parseInt(card.dataset.streamCount, 10) > maxStreamers) return false;
+          if (saleFilter && saleFilter.checked && card.dataset.onSale !== '1') return false;
+
+          const query = normalizeSearch(searchQuery ? searchQuery.value : '').trim();
+          if (!query) return true;
+          const category = searchCategory ? searchCategory.value : 'tags';
+          const haystack = category === 'title'
+            ? card.dataset.title
+            : category === 'description'
+              ? card.dataset.description
+              : card.dataset.tags;
+          if (category === 'tags') {
+            return query.split(/[\s,]+/).filter(Boolean).every(term => (haystack || '').includes(term));
+          }
+          return (haystack || '').includes(query);
+        }
+
+        function updateEmptyState() {
+          const visibleCount = Array.from(cardsByAppid.values()).filter(card => !card.hidden).length;
+          if (visibleCount > 0) {
+            renderEmptyPlatformFilters([]);
+            emptyState.hidden = true;
+            return;
+          }
+          if (!jobDone && cardsByAppid.size === 0) {
+            renderEmptyPlatformFilters([]);
+            emptyState.hidden = true;
+            return;
+          }
+          const searchActive = Boolean(searchQuery && searchQuery.value.trim());
+          const disabledPlatforms = disabledPlatformsWithCards();
+          const platformFilterActive = disabledPlatforms.length > 0;
+          emptyTitle.textContent = searchActive
+            ? 'No games match search'
+            : platformFilterActive
+              ? 'No games match platform filters'
+              : 'No games found';
+          emptyText.textContent = searchActive
+            ? 'Try a different query or search category.'
+            : platformFilterActive
+              ? 'Turn platform badges back on to show those games.'
+              : saleFilter && saleFilter.checked
+                ? 'No visible games are currently marked as on sale.'
+                : 'No live viewer matches found.';
+          renderEmptyPlatformFilters(disabledPlatforms);
+          emptyState.hidden = false;
+        }
+
+        function applyView() {
           const cards = Array.from(cardsByAppid.values());
           const mode = sortSelect.value;
+          const direction = sortDirection && sortDirection.value === 'asc' ? 1 : -1;
+          cards.forEach((card) => {
+            card.hidden = !cardMatchesSearch(card);
+          });
           cards.sort((a, b) => {
-            if (mode === 'viewers') {
-              return Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
+            if (mode === 'title') {
+              return direction * (a.dataset.title || '').localeCompare(b.dataset.title || '');
             }
             if (mode === 'installed') {
-              return Number(b.dataset.installed) - Number(a.dataset.installed)
+              return direction * (Number(a.dataset.installed) - Number(b.dataset.installed))
                 || Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed);
             }
-            if (mode === 'discovery') {
-              return Number(b.dataset.discoveryScore) - Number(a.dataset.discoveryScore);
+            if (mode === 'release_date') {
+              const aRelease = Number(a.dataset.releaseTimestamp) || 0;
+              const bRelease = Number(b.dataset.releaseTimestamp) || 0;
+              if (!aRelease && bRelease) return 1;
+              if (aRelease && !bRelease) return -1;
+              return direction * (aRelease - bRelease)
+                || (a.dataset.title || '').localeCompare(b.dataset.title || '');
             }
-            return Number(b.dataset.lastPlayed) - Number(a.dataset.lastPlayed)
-              || Number(b.dataset.viewerCount) - Number(a.dataset.viewerCount);
+            const metric = {
+              viewers: 'viewerCount',
+              streamers: 'streamCount',
+              average: 'averageViewers',
+              discovery: 'discoveryScore',
+              recent: 'lastPlayed',
+            }[mode] || 'discoveryScore';
+            return direction * (Number(a.dataset[metric]) - Number(b.dataset[metric]))
+              || (a.dataset.title || '').localeCompare(b.dataset.title || '');
           });
           cards.forEach((card) => library.appendChild(card));
+          updateEmptyState();
+        }
+
+        function syncAiTagsForGame(sourceButton, aiTags) {
+          const appid = sourceButton.dataset.appid || '';
+          const platform = sourceButton.dataset.platform || 'steam';
+          document.querySelectorAll('[data-stream-open]').forEach((button) => {
+            if ((button.dataset.appid || '') !== appid || (button.dataset.platform || 'steam') !== platform) return;
+            button.dataset.aiTags = aiTags;
+            button.dataset.tags = aiTags;
+            button.dataset.allTags = uniqueCsv([
+              aiTags,
+              button.dataset.twitchTags,
+              button.dataset.steamTags,
+              button.dataset.platformTags
+            ]);
+          });
+          const card = cardsByAppid.get(gameKey(appid, platform));
+          if (card) {
+            const matchingButton = card.querySelector('[data-stream-open]');
+            card.dataset.tags = normalizeSearch((matchingButton && matchingButton.dataset.allTags) || aiTags);
+            applyView();
+          }
         }
 
         function populateDock(games) {
@@ -384,6 +1140,7 @@
           
           // Sort by last_played descending, filter out never played (last_played === 0)
           const recentGames = games
+            .filter(game => platformIsVisible(game.platform || 'steam'))
             .filter(game => game.last_played && game.last_played > 0)
             .sort((a, b) => b.last_played - a.last_played)
             .slice(0, 5); // Top 5 recently played
@@ -410,17 +1167,16 @@
         }
 
         function createDockCard(game) {
-          const article = document.createElement('article');
+         const article = document.createElement('article');
           article.className = 'dock-card';
           article.dataset.appid = game.appid;
+          article.dataset.platform = game.platform || 'steam';
           
           // Image
            const imageWrap = document.createElement('div');
           imageWrap.className = 'dock-card__image';
           const image = document.createElement('img');
-          image.src = game.platform_image_url || game.steam_header_url;
-          image.alt = `${game.name} ${game.platform || 'Steam'} header`;
-          image.loading = 'lazy';
+          setGameImage(image, game);
           imageWrap.appendChild(image);
           
           const body = document.createElement('div');
@@ -446,22 +1202,37 @@
           streamPill.textContent = compactNumber(game.stream_count) + ' s';
           streamPill.title = (game.stream_count || 0) + ' active streams';
 
+          const averagePill = document.createElement('span');
+          averagePill.className = 'dock-card__average';
+          averagePill.textContent = Number(game.adjusted_average_viewers_per_stream || 0).toFixed(1) + ' avg';
+          averagePill.title = Number(game.average_viewers_per_stream || 0).toFixed(1) + ' raw average, ' + Number(game.adjusted_average_viewers_per_stream || 0).toFixed(1) + ' whale-adjusted average';
+
           const discoveryPill = document.createElement('span');
           discoveryPill.className = 'dock-card__discovery';
           discoveryPill.textContent = 'D: ' + (game.discovery_score || 0).toFixed(2);
 
-          dockPills.append(viewerPill, streamPill, discoveryPill);
+          dockPills.append(viewerPill, streamPill, averagePill, discoveryPill);
+          if (game.is_on_sale) {
+            const salePill = document.createElement('span');
+            salePill.className = 'dock-card__sale';
+            salePill.textContent = `${game.discount_percent || 0}% off`;
+            salePill.title = [game.price_initial_formatted, game.price_final_formatted].filter(Boolean).join(' -> ');
+            dockPills.appendChild(salePill);
+          }
           heading.append(title, dockPills);
           
           const meta = document.createElement('div');
           meta.className = 'dock-card__meta';
           const lastPlayed = document.createElement('span');
           lastPlayed.textContent = 'Last played: ' + timestampLabel(game.last_played);
+          const released = document.createElement('span');
+          released.textContent = 'Released: ' + releaseDateLabel(game);
           const playtime = document.createElement('span');
           if (game.playtime_hours > 0) {
             playtime.textContent = game.playtime_hours + ' hours';
             meta.appendChild(playtime);
           }
+          meta.appendChild(released);
           meta.appendChild(lastPlayed);
           
           const buttons = document.createElement('div');
@@ -481,20 +1252,24 @@
           streamButton.className = 'stream-button';
           streamButton.textContent = 'Update stream';
           streamButton.dataset.streamOpen = '1';
+          streamButton.dataset.appid = game.appid || '';
+          streamButton.dataset.platform = game.platform || 'steam';
           streamButton.dataset.gameName = game.name || '';
           streamButton.dataset.twitchName = game.twitch_name || '';
           streamButton.dataset.gameId = game.twitch_game_id || '';
-          streamButton.dataset.title = channelInfo.title || `Playing ${game.name || ''}`;
-          streamButton.dataset.language = channelInfo.broadcaster_language || 'en';
-          streamButton.dataset.tags = (channelInfo.tags || []).join(', ');
+          streamButton.dataset.title = `Playing ${game.name || ''}`;
+          streamButton.dataset.language = 'en';
           streamButton.dataset.steamTags = (game.steam_tags || []).join(', ');
-          streamButton.dataset.steamDescription = game.steam_short_description || '';
-          // Platform-specific fields
+          streamButton.dataset.twitchTags = (game.twitch_tags || []).join(', ');
+          streamButton.dataset.aiTags = (game.ai_tags || []).join(', ');
+          streamButton.dataset.allTags = (game.all_tags || []).join(', ');
+          streamButton.dataset.steamDescription = game.steam_description || game.steam_short_description || '';
           streamButton.dataset.platformTags = (game.platform_tags || game.steam_tags || []).join(', ');
-          streamButton.dataset.platformDescription = game.platform_short_description || game.steam_short_description || '';
-          streamButton.dataset.branded = channelInfo.is_branded_content ? '1' : '0';
+          streamButton.dataset.platformDescription = game.platform_description || game.platform_short_description || game.steam_description || game.steam_short_description || '';
+          streamButton.dataset.generatedTitle = game.generated_title || '';
+          streamButton.dataset.branded = '0';
           streamButton.disabled = !canUpdateStream;
-          
+
           buttons.append(launchButton, streamButton);
           body.append(heading, meta, buttons);
           article.append(imageWrap, body);
@@ -502,17 +1277,23 @@
         }
 
        function upsertGame(game) {
-        if (!game || !game.appid || cardsByAppid.has(String(game.appid))) return;
-        allGamesByAppid.set(String(game.appid), game);
+        const key = gameKeyFromGame(game);
+        if (!game || !game.appid || cardsByAppid.has(key)) return;
+        allGamesByAppid.set(key, game);
         const card = createCard(game);
-        cardsByAppid.set(String(game.appid), card);
+        cardsByAppid.set(key, card);
         library.appendChild(card);
-        applySort();
+        applyView();
       }
 
        function pollJob() {
         if (!jobId) return;
-        fetch('/api/progress?job_id=' + encodeURIComponent(jobId) + '&offset=' + pollOffset)
+        const params = new URLSearchParams({
+          job_id: jobId,
+          offset: String(pollOffset),
+          deferred_platforms: deferredPlatformParam()
+        });
+        fetch('/api/progress?' + params.toString())
           .then((res) => res.json())
           .then((data) => {
             if (data.status === 'error') throw new Error(data.error || 'Unknown error');
@@ -524,11 +1305,10 @@
              updateDock();
 
             if (data.status === 'done') {
+              jobDone = true;
               const cacheNote = document.querySelector('.cache-note');
               if (cacheNote) cacheNote.hidden = false;
-              if (cardsByAppid.size === 0) {
-                emptyState.hidden = false;
-              }
+              updateEmptyState();
               return;
             }
 
@@ -539,20 +1319,201 @@
           });
       }
 
+      const statsSection = document.querySelector('.stats');
+      if (statsSection) {
+        statsSection.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-platform-filter]');
+          if (!button) return;
+          togglePlatformFilter(button.dataset.platformFilter || 'steam');
+        });
+      }
+      if (emptyPlatformFilters) {
+        emptyPlatformFilters.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-platform-filter]');
+          if (!button) return;
+          togglePlatformFilter(button.dataset.platformFilter || 'steam');
+        });
+      }
+      if (enableAllPlatformsButton) {
+        enableAllPlatformsButton.addEventListener('click', enableAllPlatformFilters);
+      }
+      if (controlsForm) {
+        controlsForm.addEventListener('submit', syncDeferredPlatformsInput);
+      }
+
+      syncPlatformFilterButtons();
       initialGames.forEach(upsertGame);
       updateDock();
-      sortSelect.addEventListener('change', applySort);
+      applyView();
+      sortSelect.addEventListener('change', applyView);
+      if (sortDirection) sortDirection.addEventListener('change', applyView);
+      if (searchCategory) searchCategory.addEventListener('change', applyView);
+      if (searchQuery) {
+        searchQuery.addEventListener('input', applyView);
+        searchQuery.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') event.preventDefault();
+        });
+      }
+      if (streamerFilter) {
+        streamerFilter.addEventListener('input', () => {
+          const val = parseInt(streamerFilter.value, 10);
+          streamerFilterLabel.textContent = val >= 100 ? 'Any' : '≤' + val;
+          applyView();
+        });
+      }
+      if (saleFilter) saleFilter.addEventListener('change', applyView);
       pollJob();
+
+      // Current-game detection — top-nav button.
+      const currentGameButton = document.getElementById('current-game-button');
+      let currentGameAppid = null;
+      let currentGamePlatform = null;
+      let currentGameName = null;
+
+      function setCurrentGameState(game) {
+        if (!currentGameButton) return;
+        if (game && game.appid) {
+          currentGameAppid = String(game.appid);
+          currentGamePlatform = game.platform || 'steam';
+          currentGameName = game.name || '';
+          currentGameButton.disabled = !canUpdateStream;
+          currentGameButton.dataset.detected = '1';
+          const label = currentGameName ? 'Update: ' + currentGameName : 'Update current game';
+          currentGameButton.textContent = label.length > 42 ? label.slice(0, 40) + '…' : label;
+          currentGameButton.title = canUpdateStream
+            ? 'Open the stream-update modal for ' + (currentGameName || 'the running game')
+            : 'Connect Twitch to update stream info';
+        } else {
+          currentGameAppid = null;
+          currentGamePlatform = null;
+          currentGameName = null;
+          currentGameButton.disabled = true;
+          delete currentGameButton.dataset.detected;
+          currentGameButton.textContent = 'No game running';
+          currentGameButton.title = 'No running game detected';
+        }
+      }
+
+      function buildSyntheticStreamButton(game) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.style.display = 'none';
+        btn.dataset.streamOpen = '1';
+        btn.dataset.appid = game.appid || '';
+        btn.dataset.platform = game.platform || 'steam';
+        btn.dataset.gameName = game.name || '';
+        btn.dataset.twitchName = game.twitch_name || '';
+        btn.dataset.gameId = game.twitch_game_id || '';
+        btn.dataset.title = `Playing ${game.name || ''}`;
+        btn.dataset.language = 'en';
+        btn.dataset.steamTags = (game.steam_tags || []).join(', ');
+        btn.dataset.twitchTags = (game.twitch_tags || []).join(', ');
+        btn.dataset.aiTags = (game.ai_tags || []).join(', ');
+        btn.dataset.allTags = (game.all_tags || []).join(', ');
+        btn.dataset.steamDescription = game.steam_description || game.steam_short_description || '';
+        btn.dataset.platformTags = (game.platform_tags || game.steam_tags || []).join(', ');
+        btn.dataset.platformDescription = game.platform_description || game.platform_short_description || game.steam_description || game.steam_short_description || '';
+        btn.dataset.generatedTitle = game.generated_title || '';
+        btn.dataset.branded = '0';
+        document.body.appendChild(btn);
+        return btn;
+      }
+
+      function findStreamButtonForAppid(appid, platform = 'steam') {
+        if (!appid) return null;
+        const card = cardsByAppid.get(gameKey(appid, platform));
+        if (card) {
+          const found = card.querySelector('[data-stream-open]');
+          if (found) return found;
+        }
+        return null;
+      }
+
+      if (currentGameButton) {
+        currentGameButton.addEventListener('click', () => {
+          if (!currentGameAppid) return;
+          let target = findStreamButtonForAppid(currentGameAppid, currentGamePlatform || 'steam');
+          if (!target) {
+            const game = allGamesByAppid.get(gameKey(currentGameAppid, currentGamePlatform || 'steam'));
+            if (game) {
+              target = buildSyntheticStreamButton(game);
+            } else {
+              target = buildSyntheticStreamButton({
+                appid: currentGameAppid,
+                platform: currentGamePlatform || 'steam',
+                name: currentGameName || '',
+              });
+            }
+          }
+          target.click();
+        });
+      }
+
+      function refreshCurrentGame() {
+        fetch('/api/current-game', { headers: { 'Accept': 'application/json' } })
+          .then((r) => r.ok ? r.json() : { game: null })
+          .then((data) => setCurrentGameState(data && data.game))
+          .catch(() => {});
+      }
+
+      refreshCurrentGame();
+      setInterval(() => {
+        if (document.visibilityState === 'visible') refreshCurrentGame();
+      }, 30000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refreshCurrentGame();
+      });
+
+      const titleModeDefaultRadio = document.querySelector('input[name="title-mode"][value="default"]');
+      const titleModeGeneratedRadio = document.querySelector('input[name="title-mode"][value="generated"]');
+      const titlePreview = document.getElementById('ai-title-preview');
+      const titleContextInput = document.getElementById('ai-title-context');
+      let titleDefaultValue = '';
+      let titleGeneratedValue = '';
+
+      function applyTitleMode(mode) {
+        if (mode === 'generated' && titleGeneratedValue) {
+          fields.title.value = titleGeneratedValue;
+        } else if (mode === 'default') {
+          fields.title.value = titleDefaultValue;
+        }
+      }
+
+      function setGeneratedTitle(value) {
+        titleGeneratedValue = (value || '').trim();
+        const has = !!titleGeneratedValue;
+        if (titleModeGeneratedRadio) titleModeGeneratedRadio.disabled = !has;
+        if (titlePreview) titlePreview.textContent = has ? 'Generated: ' + titleGeneratedValue : '';
+        if (activeStreamButton) activeStreamButton.dataset.generatedTitle = titleGeneratedValue;
+      }
+
+      if (titleModeDefaultRadio) {
+        titleModeDefaultRadio.addEventListener('change', () => {
+          if (titleModeDefaultRadio.checked) applyTitleMode('default');
+        });
+      }
+      if (titleModeGeneratedRadio) {
+        titleModeGeneratedRadio.addEventListener('change', () => {
+          if (titleModeGeneratedRadio.checked) applyTitleMode('generated');
+        });
+      }
 
       document.addEventListener('click', (event) => {
         const button = event.target.closest('[data-stream-open]');
         if (!button) return;
         activeStreamButton = button;
+        fields.appid.value = button.dataset.appid || '';
+        fields.platform.value = button.dataset.platform || 'steam';
         fields.gameId.value = button.dataset.gameId || '';
         fields.category.value = button.dataset.twitchName || button.dataset.gameName || '';
-        fields.title.value = button.dataset.title || `Playing ${button.dataset.gameName || ''}`;
+        const startingTitle = button.dataset.title || `Playing ${button.dataset.gameName || ''}`;
+        fields.title.value = startingTitle;
+        titleDefaultValue = `Playing ${button.dataset.gameName || ''}`;
+        setGeneratedTitle(button.dataset.generatedTitle || '');
+        if (titleContextInput) titleContextInput.value = '';
+        if (titleModeDefaultRadio) titleModeDefaultRadio.checked = true;
         fields.language.value = button.dataset.language || 'en';
-         fields.tags.value = button.dataset.platformTags || button.dataset.steamTags || button.dataset.tags || '';
+         fields.tags.value = button.dataset.aiTags || button.dataset.allTags || button.dataset.twitchTags || button.dataset.platformTags || button.dataset.steamTags || button.dataset.tags || '';
         fields.branded.checked = button.dataset.branded === '1';
         modal.showModal();
       });
@@ -587,9 +1548,7 @@
                 const updatedTags = (data.updates && data.updates.tags ? data.updates.tags : []).join(', ');
                 activeStreamButton.dataset.title = fields.title.value;
                 activeStreamButton.dataset.language = fields.language.value;
-                activeStreamButton.dataset.tags = updatedTags;
-                 activeStreamButton.dataset.steamTags = updatedTags;
-                 activeStreamButton.dataset.platformTags = updatedTags;
+                syncAiTagsForGame(activeStreamButton, updatedTags);
                 activeStreamButton.dataset.branded = fields.branded.checked ? '1' : '0';
               }
 
@@ -615,6 +1574,8 @@
           if (!activeStreamButton) return;
           
           const gameName = activeStreamButton.dataset.gameName || '';
+          const appid = activeStreamButton.dataset.appid || '';
+          const platform = activeStreamButton.dataset.platform || 'steam';
            const steamTagsRaw = activeStreamButton.dataset.steamTags || '';
           const steamTags = steamTagsRaw.split(',').map(t => t.trim()).filter(Boolean);
           const gameDescription = activeStreamButton.dataset.steamDescription || '';
@@ -635,6 +1596,8 @@
               'Accept': 'application/json'
             },
              body: JSON.stringify({
+              appid: appid,
+              platform: platform,
               game_name: gameName,
               steam_tags: platformTags.length > 0 ? platformTags : steamTags,
               game_description: platformDescription || gameDescription
@@ -649,8 +1612,7 @@
                 // Update tags input field
                 fields.tags.value = data.tags.join(', ');
                 // Also update the active button dataset for consistency
-                activeStreamButton.dataset.steamTags = data.tags.join(', ');
-                activeStreamButton.dataset.tags = data.tags.join(', ');
+                syncAiTagsForGame(activeStreamButton, data.tags.join(', '));
                 showNotice('success', 'AI tags generated successfully.');
               } else {
                 throw new Error('Invalid response from AI');
@@ -665,6 +1627,1119 @@
             });
         });
       }
+
+      // Generate SEO title button
+      const aiTitleButton = document.getElementById('ai-title-button');
+      if (aiTitleButton) {
+        aiTitleButton.addEventListener('click', () => {
+          if (!activeStreamButton) return;
+
+          const gameName = activeStreamButton.dataset.gameName || '';
+          const appid = activeStreamButton.dataset.appid || '';
+          const platform = activeStreamButton.dataset.platform || 'steam';
+          const platformTagsRaw = activeStreamButton.dataset.platformTags || activeStreamButton.dataset.steamTags || '';
+          const platformTags = platformTagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+          const description = activeStreamButton.dataset.platformDescription || activeStreamButton.dataset.steamDescription || '';
+          const currentTitle = fields.title.value || '';
+          const extraContext = (titleContextInput && titleContextInput.value || '').trim();
+
+          const originalText = aiTitleButton.textContent;
+          aiTitleButton.disabled = true;
+          aiTitleButton.textContent = 'Generating…';
+
+          fetch('/api/generate-title', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+              appid,
+              platform,
+              game_name: gameName,
+              platform_tags: platformTags,
+              game_description: description,
+              current_title: currentTitle,
+              extra_context: extraContext,
+            })
+          })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+              if (!ok || data.error) throw new Error(data.error || 'Generation failed');
+              if (!data.title) throw new Error('LLM returned no title');
+              setGeneratedTitle(data.title);
+              if (titleModeGeneratedRadio) {
+                titleModeGeneratedRadio.checked = true;
+                applyTitleMode('generated');
+              }
+              showNotice('success', 'SEO title generated.');
+            })
+            .catch(error => {
+              showNotice('error', 'Failed to generate title: ' + error.message);
+            })
+            .finally(() => {
+              aiTitleButton.disabled = false;
+              aiTitleButton.textContent = originalText;
+            });
+        });
+      }
+
+      // ── Data / Analytics tab ─────────────────────────────────────────
+
+      const tabNav = document.getElementById('tab-nav');
+      const tabLibrary = document.getElementById('tab-library');
+      const tabData = document.getElementById('tab-data');
+      const tabOpportunities = document.getElementById('tab-opportunities');
+      const historyGameSearchBox = document.getElementById('history-game-search-box');
+      const historyGameInput = document.getElementById('history-game-search');
+      const historyGameResults = document.getElementById('history-game-results');
+      const historyGameClear = document.getElementById('history-game-clear');
+      let historyGamesData = [];
+      let historyGameSelectedId = '';
+      let historyGameActiveIndex = -1;
+
+      const historyGameSelect = {
+        get value() { return historyGameSelectedId; },
+        set value(v) { setHistoryGame(String(v || ''), { silent: true }); },
+      };
+
+      function findHistoryGame(id) {
+        return historyGamesData.find(g => String(g.twitch_game_id) === String(id));
+      }
+
+      function gameLabel(g) {
+        return g.twitch_game_name + ' (' + g.snapshot_count + ' snapshots)';
+      }
+
+      function filteredHistoryGames() {
+        const q = historyGameInput.value.trim().toLowerCase();
+        const selected = historyGameSelectedId ? findHistoryGame(historyGameSelectedId) : null;
+        const matchesSelected = selected && q === (selected.twitch_game_name || '').toLowerCase();
+        if (!q || matchesSelected) return historyGamesData.slice(0, 50);
+        return historyGamesData
+          .filter(g => (g.twitch_game_name || '').toLowerCase().includes(q))
+          .slice(0, 50);
+      }
+
+      function renderHistoryGameResults() {
+        const items = filteredHistoryGames();
+        historyGameResults.innerHTML = '';
+        if (items.length === 0) {
+          const li = document.createElement('li');
+          li.className = 'history-game-results__empty';
+          li.textContent = historyGamesData.length === 0 ? 'No games tracked yet' : 'No matches';
+          historyGameResults.appendChild(li);
+        } else {
+          items.forEach((g, i) => {
+            const li = document.createElement('li');
+            li.className = 'history-game-results__item';
+            li.setAttribute('role', 'option');
+            li.dataset.gameId = g.twitch_game_id;
+            li.textContent = gameLabel(g);
+            if (i === historyGameActiveIndex) li.classList.add('is-active');
+            if (String(g.twitch_game_id) === String(historyGameSelectedId)) {
+              li.classList.add('is-selected');
+            }
+            historyGameResults.appendChild(li);
+          });
+        }
+      }
+
+      function openHistoryGameResults() {
+        renderHistoryGameResults();
+        historyGameResults.hidden = false;
+        historyGameInput.setAttribute('aria-expanded', 'true');
+      }
+
+      function closeHistoryGameResults() {
+        historyGameResults.hidden = true;
+        historyGameActiveIndex = -1;
+        historyGameInput.setAttribute('aria-expanded', 'false');
+      }
+
+      function setHistoryGame(id, opts) {
+        const silent = opts && opts.silent;
+        const game = id ? findHistoryGame(id) : null;
+        historyGameSelectedId = game ? String(game.twitch_game_id) : '';
+        historyGameInput.value = game ? game.twitch_game_name : '';
+        historyGameClear.hidden = !historyGameSelectedId;
+        closeHistoryGameResults();
+        if (!silent) {
+          refreshCharts();
+          refreshHeatmap();
+        }
+      }
+      const timePills = document.getElementById('time-pills');
+      const recordNowButton = document.getElementById('record-now-button');
+      const collectorStatusEl = document.getElementById('collector-status');
+      const heatmapGrid = document.getElementById('heatmap-grid');
+      let viewerChart = null;
+      let discoveryChart = null;
+      let selectedDays = 7;
+
+      function switchTab(tabName) {
+        tabLibrary.hidden = tabName !== 'library';
+        tabData.hidden = tabName !== 'data';
+        tabOpportunities.hidden = tabName !== 'opportunities';
+        tabNav.querySelectorAll('.tab').forEach(btn => {
+          btn.classList.toggle('tab--active', btn.dataset.tab === tabName);
+        });
+        if (tabName === 'data') {
+          loadHistoryGames();
+          pollCollectorStatus();
+          refreshAllGamesChart();
+        } else if (tabName === 'opportunities') {
+          refreshOpportunities();
+        }
+      }
+
+      tabNav.addEventListener('click', (event) => {
+        const tab = event.target.closest('.tab');
+        if (!tab) return;
+        switchTab(tab.dataset.tab);
+      });
+
+      async function loadHistoryGames() {
+        try {
+          const res = await fetch('/api/history/games');
+          const data = await res.json();
+          historyGamesData = data.games || [];
+          if (historyGameSelectedId && !findHistoryGame(historyGameSelectedId)) {
+            setHistoryGame('', { silent: true });
+          } else if (historyGameSelectedId) {
+            const g = findHistoryGame(historyGameSelectedId);
+            if (g && document.activeElement !== historyGameInput) {
+              historyGameInput.value = g.twitch_game_name;
+            }
+            historyGameClear.hidden = false;
+          }
+          if (!historyGameResults.hidden) renderHistoryGameResults();
+        } catch (e) {
+          console.error('Failed to load history games:', e);
+        }
+      }
+
+      historyGameInput.addEventListener('focus', () => {
+        historyGameInput.select();
+        openHistoryGameResults();
+      });
+      historyGameInput.addEventListener('input', () => {
+        historyGameActiveIndex = -1;
+        openHistoryGameResults();
+      });
+      historyGameInput.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          if (historyGameResults.hidden) openHistoryGameResults();
+          const items = filteredHistoryGames();
+          if (items.length === 0) return;
+          const dir = event.key === 'ArrowDown' ? 1 : -1;
+          historyGameActiveIndex = (historyGameActiveIndex + dir + items.length) % items.length;
+          renderHistoryGameResults();
+          const activeEl = historyGameResults.querySelector('.history-game-results__item.is-active');
+          if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'Enter') {
+          const items = filteredHistoryGames();
+          if (historyGameActiveIndex >= 0 && items[historyGameActiveIndex]) {
+            event.preventDefault();
+            setHistoryGame(items[historyGameActiveIndex].twitch_game_id);
+          } else if (items.length === 1) {
+            event.preventDefault();
+            setHistoryGame(items[0].twitch_game_id);
+          }
+        } else if (event.key === 'Escape') {
+          closeHistoryGameResults();
+          historyGameInput.blur();
+        }
+      });
+
+      historyGameResults.addEventListener('mousedown', (event) => {
+        const item = event.target.closest('.history-game-results__item');
+        if (!item) return;
+        event.preventDefault();
+        setHistoryGame(item.dataset.gameId);
+      });
+
+      historyGameClear.addEventListener('click', () => {
+        setHistoryGame('');
+        historyGameInput.focus();
+      });
+
+      document.addEventListener('mousedown', (event) => {
+        if (!historyGameSearchBox.contains(event.target)) {
+          closeHistoryGameResults();
+          if (historyGameSelectedId) {
+            const g = findHistoryGame(historyGameSelectedId);
+            if (g) historyGameInput.value = g.twitch_game_name;
+          } else {
+            historyGameInput.value = '';
+          }
+        }
+      });
+
+      timePills.addEventListener('click', (event) => {
+        const pill = event.target.closest('.time-pill');
+        if (!pill) return;
+        selectedDays = parseInt(pill.dataset.days);
+        timePills.querySelectorAll('.time-pill').forEach(p => p.classList.remove('time-pill--active'));
+        pill.classList.add('time-pill--active');
+        refreshCharts();
+        refreshHeatmap();
+        refreshAllGamesChart();
+      });
+
+      async function refreshCharts() {
+        const gameId = historyGameSelect.value;
+        if (!gameId) return;
+        const days = selectedDays || 365;
+        try {
+          const res = await fetch('/api/history/series?game_id=' + encodeURIComponent(gameId) + '&days=' + days);
+          const json = await res.json();
+          const data = json.data || [];
+          if (data.length === 0) {
+            destroyCharts();
+            return;
+          }
+          const labels = data.map(d => {
+            const dObj = new Date(d.timestamp * 1000);
+            if (days <= 1) return dObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (days <= 7) return dObj.toLocaleDateString([], { weekday: 'short', hour: '2-digit' });
+            return dObj.toLocaleDateString();
+          });
+          const viewers = data.map(d => d.viewer_count);
+          const streams = data.map(d => d.stream_count);
+          const discovery = data.map(d => {
+            const sc = d.stream_count || 0;
+            const vc = d.viewer_count || 0;
+            let discoverability = sc <= 20 ? 1.0 : Math.max(0, 1 - (sc - 20) / 80);
+            let demand = Math.min((vc / Math.max(sc, 1)) / 5, 1.0);
+            let floor = vc >= 3 ? 1.0 : 0;
+            let balance = 1.0;
+            return parseFloat((discoverability * 0.45 + demand * 0.35 + floor * 0.1 + balance * 0.1).toFixed(3));
+          });
+
+          if (viewerChart) viewerChart.destroy();
+          if (discoveryChart) discoveryChart.destroy();
+
+          const ctx1 = document.getElementById('chart-viewers').getContext('2d');
+          viewerChart = new Chart(ctx1, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [
+                {
+                  label: 'Viewers',
+                  data: viewers,
+                  borderColor: '#66c0f4',
+                  backgroundColor: 'rgba(102, 192, 244, 0.1)',
+                  fill: true,
+                  tension: 0.3,
+                  yAxisID: 'y',
+                },
+                {
+                  label: 'Streamers',
+                  data: streams,
+                  borderColor: '#8bc53f',
+                  backgroundColor: 'rgba(139, 197, 63, 0.1)',
+                  fill: true,
+                  tension: 0.3,
+                  yAxisID: 'y1',
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                legend: { labels: { color: '#8f98a8' } },
+              },
+              scales: {
+                x: { ticks: { color: '#8f98a8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: {
+                  type: 'linear',
+                  position: 'left',
+                  title: { display: true, text: 'Viewers', color: '#66c0f4' },
+                  ticks: { color: '#8f98a8' },
+                  grid: { color: 'rgba(255,255,255,0.05)' },
+                },
+                y1: {
+                  type: 'linear',
+                  position: 'right',
+                  title: { display: true, text: 'Streamers', color: '#8bc53f' },
+                  ticks: { color: '#8f98a8' },
+                  grid: { drawOnChartArea: false },
+                },
+              },
+            },
+          });
+
+          const ctx2 = document.getElementById('chart-discovery').getContext('2d');
+          discoveryChart = new Chart(ctx2, {
+            type: 'line',
+            data: {
+              labels,
+              datasets: [
+                {
+                  label: 'Discovery Score',
+                  data: discovery,
+                  borderColor: '#f4a261',
+                  backgroundColor: 'rgba(244, 162, 97, 0.15)',
+                  fill: true,
+                  tension: 0.3,
+                },
+              ],
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                legend: { labels: { color: '#8f98a8' } },
+              },
+              scales: {
+                x: { ticks: { color: '#8f98a8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: {
+                  min: 0,
+                  max: 1,
+                  ticks: { color: '#8f98a8' },
+                  grid: { color: 'rgba(255,255,255,0.05)' },
+                },
+              },
+            },
+          });
+        } catch (e) {
+          console.error('Failed to fetch series:', e);
+        }
+      }
+
+      function destroyCharts() {
+        if (viewerChart) { viewerChart.destroy(); viewerChart = null; }
+        if (discoveryChart) { discoveryChart.destroy(); discoveryChart = null; }
+      }
+
+      async function refreshHeatmap() {
+        const gameId = historyGameSelect.value;
+        if (!gameId) { heatmapGrid.innerHTML = '<p class="heatmap-empty">Select a game and time range to see the heatmap.</p>'; return; }
+        const days = selectedDays || 365;
+        try {
+          const res = await fetch('/api/history/heatmap?game_id=' + encodeURIComponent(gameId) + '&days=' + days);
+          const data = await res.json();
+          const cells = data.cells || [];
+          const hasData = cells.some(row => row.some(cell => cell !== null));
+          if (!hasData) {
+            heatmapGrid.innerHTML = '<p class="heatmap-empty">No data for this time range.</p>';
+            return;
+          }
+
+          let minScore = Infinity, maxScore = -Infinity;
+          cells.forEach(row => row.forEach(cell => {
+            if (cell && cell.avg_discovery < minScore) minScore = cell.avg_discovery;
+            if (cell && cell.avg_discovery > maxScore) maxScore = cell.avg_discovery;
+          }));
+
+          let html = '<table class="heatmap-table"><thead><tr><th></th>';
+          data.hours.forEach(h => {
+            const label = h === 0 ? '12a' : h < 12 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p';
+            html += '<th>' + label + '</th>';
+          });
+          html += '</tr></thead><tbody>';
+
+          data.days.forEach((day, d) => {
+            html += '<tr><th>' + day + '</th>';
+            for (let h = 0; h < 24; h++) {
+              const cell = cells[d][h];
+              if (cell) {
+                const pct = maxScore > minScore ? (cell.avg_discovery - minScore) / (maxScore - minScore) : 0.5;
+                const r = Math.round(220 - pct * 200);
+                const g = Math.round(60 + pct * 170);
+                const b = Math.round(50);
+                const color = 'rgb(' + r + ',' + g + ',' + b + ')';
+                html += '<td class="heatmap-cell" style="background:' + color +
+                  '" title="Discovery: ' + cell.avg_discovery.toFixed(2) +
+                  ' | Viewers: ' + cell.avg_viewers +
+                  ' | Streamers: ' + cell.avg_streams +
+                  ' | Samples: ' + cell.count + '">' +
+                  cell.avg_discovery.toFixed(2) + '</td>';
+              } else {
+                html += '<td class="heatmap-cell heatmap-cell--empty"></td>';
+              }
+            }
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+          heatmapGrid.innerHTML = html;
+        } catch (e) {
+          console.error('Failed to fetch heatmap:', e);
+        }
+      }
+
+      async function pollCollectorStatus() {
+        try {
+          const res = await fetch('/api/history/status');
+          const data = await res.json();
+          const dot = collectorStatusEl.querySelector('.status-dot');
+          const text = collectorStatusEl.querySelector('.status-text');
+          dot.className = 'status-dot ' + (data.running ? 'status-dot--running' : 'status-dot--idle');
+          if (data.running) {
+            text.textContent = 'Collecting...';
+          } else if (data.last_collection_time) {
+            const ago = Math.round((Date.now() / 1000 - data.last_collection_time) / 60);
+            text.textContent = 'Last snapshot: ' + ago + 'm ago · ' + (data.total_snapshots || 0) + ' total';
+          } else {
+            text.textContent = 'No snapshots yet · ' + (data.total_snapshots || 0) + ' total';
+          }
+        } catch (e) {
+          console.error('Failed to poll collector status:', e);
+        }
+      }
+
+      recordNowButton.addEventListener('click', async () => {
+        recordNowButton.disabled = true;
+        recordNowButton.textContent = 'Recording...';
+        try {
+          const res = await fetch('/api/history/collect', { method: 'POST' });
+          const data = await res.json();
+          if (data.success) {
+            showNotice('success', data.message || 'Snapshot collection started.');
+            setTimeout(pollCollectorStatus, 2000);
+            setTimeout(() => {
+              loadHistoryGames();
+              refreshCharts();
+              refreshHeatmap();
+              refreshAllGamesChart();
+            }, 5000);
+          } else {
+            showNotice('error', data.message || 'Collection already running.');
+          }
+        } catch (e) {
+          showNotice('error', 'Failed to trigger snapshot: ' + e.message);
+        } finally {
+          recordNowButton.disabled = false;
+          recordNowButton.textContent = 'Record Now';
+        }
+      });
+
+      // ── All Games discovery chart ─────────────────────────────────
+
+      let allGamesChart = null;
+
+      const allGamesNowToggle = document.getElementById('all-games-now-toggle');
+      if (allGamesNowToggle) allGamesNowToggle.addEventListener('change', refreshAllGamesChart);
+      ['all-games-min-discovery', 'all-games-max-streams', 'all-games-top-n', 'all-games-window-slider'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        let timer = null;
+        el.addEventListener('input', () => {
+          const labelEl = document.getElementById('all-games-window-label');
+          if (id === 'all-games-window-slider' && labelEl) {
+            labelEl.textContent = formatWindowLabel(parseInt(el.value, 10) || 60);
+          }
+          clearTimeout(timer);
+          timer = setTimeout(refreshAllGamesChart, 300);
+        });
+      });
+
+      function formatWindowLabel(minutes) {
+        if (minutes < 60) return '±' + minutes + 'm';
+        const hours = minutes / 60;
+        const wholeHours = Math.floor(hours);
+        const remMinutes = minutes - wholeHours * 60;
+        if (remMinutes === 0) return '±' + wholeHours + 'h';
+        return '±' + wholeHours + 'h' + remMinutes + 'm';
+      }
+
+      async function refreshAllGamesChart() {
+        const days = selectedDays || 7;
+        const nowToggle = document.getElementById('all-games-now-toggle');
+        const windowSlider = document.getElementById('all-games-window-slider');
+        const windowLabel = document.getElementById('all-games-window-label');
+        const minDiscoveryInput = document.getElementById('all-games-min-discovery');
+        const maxStreamsInput = document.getElementById('all-games-max-streams');
+        const topNInput = document.getElementById('all-games-top-n');
+        const filterStatus = document.getElementById('all-games-filter-status');
+        const filterNow = nowToggle ? nowToggle.checked : false;
+        const windowMinutes = windowSlider ? Math.max(1, parseInt(windowSlider.value, 10) || 60) : 60;
+        if (windowLabel) windowLabel.textContent = formatWindowLabel(windowMinutes);
+        const minDiscovery = minDiscoveryInput ? Math.max(0, Number(minDiscoveryInput.value) || 0) : 0;
+        const maxStreams = maxStreamsInput ? Math.max(0, Number(maxStreamsInput.value) || 0) : 0;
+        const topN = topNInput ? Math.max(1, parseInt(topNInput.value, 10) || 12) : 12;
+        const params = new URLSearchParams({ days: String(days) });
+        if (filterNow) {
+          params.set('current_window_minutes', String(windowMinutes));
+          params.set('min_avg_discovery', String(minDiscovery));
+          if (maxStreams > 0) params.set('max_avg_streams', String(maxStreams));
+          params.set('limit', String(topN));
+        }
+        try {
+          const res = await fetch('/api/history/all-series?' + params.toString());
+          const json = await res.json();
+          const allGames = json.games || [];
+          if (filterStatus) {
+            if (filterNow) {
+              filterStatus.textContent = allGames.length
+                ? 'Top ' + allGames.length + ' game(s) at this time of day (' + formatWindowLabel(windowMinutes) + ')'
+                : 'No games match. Try lowering Min discovery or raising Max streamers.';
+            } else {
+              filterStatus.textContent = '';
+            }
+          }
+          if (allGames.length === 0) {
+            if (allGamesChart) { allGamesChart.destroy(); allGamesChart = null; }
+            return;
+          }
+
+          const nowSeconds = Date.now() / 1000;
+          const windowStart = filterNow ? nowSeconds - windowMinutes * 60 : -Infinity;
+          const windowEnd = filterNow ? nowSeconds + windowMinutes * 60 : Infinity;
+
+          // Build a merged timeline of unique timestamps (clipped to display window)
+          const timeSet = new Set();
+          const gameDataMap = {};
+          allGames.forEach(g => {
+            gameDataMap[g.twitch_game_id] = {};
+            g.data.forEach(d => {
+              if (d.timestamp < windowStart || d.timestamp > windowEnd) return;
+              timeSet.add(d.timestamp);
+              gameDataMap[g.twitch_game_id][d.timestamp] = d.discovery;
+            });
+          });
+          const sortedTimes = [...timeSet].sort((a, b) => a - b);
+
+          const labels = sortedTimes.map(ts => {
+            const dObj = new Date(ts * 1000);
+            if (filterNow) {
+              if (windowMinutes >= 12 * 60) return dObj.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+              return dObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+            if (days <= 1) return dObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (days <= 7) return dObj.toLocaleDateString([], { weekday: 'short', hour: '2-digit' });
+            return dObj.toLocaleDateString();
+          });
+
+          const datasets = allGames.map(g => {
+            const labelParts = [g.twitch_game_name];
+            if (g.avg_discovery_now != null) {
+              labelParts.push('D ' + g.avg_discovery_now.toFixed(2));
+              labelParts.push(compactNumber(g.avg_viewers_now) + 'v / ' + compactNumber(g.avg_streams_now) + 's');
+            }
+            return {
+              label: labelParts.join(' · '),
+              data: sortedTimes.map(ts => gameDataMap[g.twitch_game_id][ts] ?? null),
+              borderColor: g.color,
+              backgroundColor: g.color.replace('55%)', '55%, 0.1)').replace('hsl', 'hsla'),
+              borderWidth: 1.5,
+              tension: 0.3,
+              spanGaps: false,
+              pointRadius: filterNow ? 3 : 0,
+              pointHoverRadius: 5,
+              pointHoverBackgroundColor: g.color,
+              gameId: g.twitch_game_id,
+            };
+          });
+
+          if (allGamesChart) allGamesChart.destroy();
+
+          const ctx = document.getElementById('chart-all-games').getContext('2d');
+          allGamesChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: 'nearest', intersect: false },
+              onClick: (e, elements, chart) => {
+                if (elements.length > 0) {
+                  const idx = elements[0].datasetIndex;
+                  const ds = chart.data.datasets[idx];
+                  historyGameSelect.value = ds.gameId;
+                  refreshCharts();
+                  refreshHeatmap();
+                  document.getElementById('chart-all-games').scrollIntoView({ behavior: 'smooth' });
+                }
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  callbacks: {
+                    label: function(ctx) {
+                      const v = ctx.raw;
+                      return ctx.dataset.label + ': ' + (v !== null ? v.toFixed(3) : 'no data');
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: { ticks: { color: '#8f98a8', maxTicksLimit: 20 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: {
+                  min: 0,
+                  max: 1,
+                  title: { display: true, text: 'Discovery Score', color: '#8f98a8' },
+                  ticks: { color: '#8f98a8' },
+                  grid: { color: 'rgba(255,255,255,0.05)' },
+                },
+              },
+            },
+          });
+
+          renderAllGamesLegend(allGamesChart, allGames);
+        } catch (e) {
+          console.error('Failed to load all games chart:', e);
+        }
+      }
+
+      function renderAllGamesLegend(chart, allGames) {
+        const container = document.getElementById('all-games-legend');
+        if (!container || !chart) return;
+        container.innerHTML = '';
+
+        chart.data.datasets.forEach((ds, idx) => {
+          const series = allGames[idx] || {};
+          const fullGame = findGameByTwitchId(String(series.twitch_game_id));
+          const card = document.createElement('div');
+          card.className = 'legend-card';
+          card.style.setProperty('--legend-color', ds.borderColor || '#66c0f4');
+          if (!chart.isDatasetVisible(idx)) card.classList.add('legend-card--hidden');
+
+          const stripe = document.createElement('span');
+          stripe.className = 'legend-card__stripe';
+          card.appendChild(stripe);
+
+          const art = document.createElement('div');
+          art.className = 'legend-card__art';
+          const artSrc = (fullGame && (fullGame.platform_image_url || fullGame.twitch_box_art_url)) || '';
+          if (artSrc) {
+            const img = document.createElement('img');
+            img.src = artSrc;
+            img.alt = '';
+            img.loading = 'lazy';
+            art.appendChild(img);
+          }
+          card.appendChild(art);
+
+          const body = document.createElement('div');
+          body.className = 'legend-card__body';
+
+          const name = document.createElement('div');
+          name.className = 'legend-card__name';
+          const displayName = (fullGame && fullGame.name) || series.twitch_game_name || 'Unknown';
+          name.textContent = displayName.length > 26 ? displayName.slice(0, 24) + '…' : displayName;
+          name.title = displayName;
+          body.appendChild(name);
+
+          const stats = document.createElement('div');
+          stats.className = 'legend-card__stats';
+          const parts = [];
+          if (series.avg_discovery_now != null) parts.push('D ' + Number(series.avg_discovery_now).toFixed(2));
+          if (series.avg_viewers_now != null) parts.push(compactNumber(series.avg_viewers_now) + 'v');
+          if (series.avg_streams_now != null) parts.push(compactNumber(series.avg_streams_now) + 's');
+          stats.textContent = parts.join(' · ');
+          body.appendChild(stats);
+
+          const actions = document.createElement('div');
+          actions.className = 'legend-card__actions';
+
+          const launchBtn = document.createElement('button');
+          launchBtn.type = 'button';
+          launchBtn.className = 'launch-button legend-card__launch';
+          launchBtn.textContent = 'Launch';
+          if (fullGame && fullGame.platform === 'steam' && fullGame.appid) {
+            launchBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              window.location.href = 'steam://run/' + fullGame.appid;
+            });
+          } else {
+            launchBtn.disabled = true;
+            launchBtn.title = 'Launch not supported for this platform';
+          }
+          actions.appendChild(launchBtn);
+
+          const infoBtn = document.createElement('button');
+          infoBtn.type = 'button';
+          infoBtn.className = 'stream-button legend-card__info';
+          infoBtn.textContent = 'Info';
+          infoBtn.disabled = !canUpdateStream || !fullGame;
+          if (fullGame) {
+            infoBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              let target = findStreamButtonForAppid(fullGame.appid, fullGame.platform || 'steam');
+              if (!target) target = buildSyntheticStreamButton(fullGame);
+              target.click();
+            });
+          }
+          actions.appendChild(infoBtn);
+
+          body.appendChild(actions);
+          card.appendChild(body);
+
+          card.addEventListener('click', () => {
+            const visible = chart.isDatasetVisible(idx);
+            chart.setDatasetVisibility(idx, !visible);
+            chart.update();
+            card.classList.toggle('legend-card--hidden', visible);
+          });
+
+          container.appendChild(card);
+        });
+      }
+
+      function findGameByTwitchId(twitchId) {
+        if (!twitchId) return null;
+        for (const game of allGamesByAppid.values()) {
+          if (String(game.twitch_game_id || '') === String(twitchId)) return game;
+        }
+        return null;
+      }
+
+      // ── Opportunities tab ────────────────────────────────────────────
+      const oppMinPeak = document.getElementById('opp-min-peak');
+      const oppMaxVps = document.getElementById('opp-max-vps');
+      const oppMinLive = document.getElementById('opp-min-live');
+      const oppSort = document.getElementById('opp-sort');
+      const oppLimit = document.getElementById('opp-limit');
+      const oppRefresh = document.getElementById('opp-refresh');
+      const oppStatus = document.getElementById('opp-status');
+      const oppTbody = document.getElementById('opportunities-tbody');
+      let oppRequestId = 0;
+
+      function formatPercent(value) {
+        return Math.round((Number(value) || 0) * 100) + '%';
+      }
+
+      function renderOpportunityRows(games) {
+        oppTbody.innerHTML = '';
+        if (!games || games.length === 0) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 7;
+          td.className = 'opportunities-empty';
+          td.textContent = 'No matching games. Try loosening the filters.';
+          tr.appendChild(td);
+          oppTbody.appendChild(tr);
+          return;
+        }
+        for (const g of games) {
+          const tr = document.createElement('tr');
+          const nameTd = document.createElement('td');
+          nameTd.textContent = g.twitch_game_name;
+          tr.appendChild(nameTd);
+          [
+            g.peak_viewers,
+            g.avg_viewers_when_live,
+            g.avg_viewers_per_stream,
+          ].forEach(v => {
+            const td = document.createElement('td');
+            td.className = 'num';
+            td.textContent = compactNumber(v);
+            tr.appendChild(td);
+          });
+          const liveTd = document.createElement('td');
+          liveTd.className = 'num';
+          liveTd.textContent = formatPercent(g.live_fraction);
+          tr.appendChild(liveTd);
+          const snapsTd = document.createElement('td');
+          snapsTd.className = 'num';
+          snapsTd.textContent = compactNumber(g.snapshots);
+          tr.appendChild(snapsTd);
+          const actionTd = document.createElement('td');
+          const viewBtn = document.createElement('button');
+          viewBtn.type = 'button';
+          viewBtn.className = 'secondary-button';
+          viewBtn.textContent = 'View history';
+          viewBtn.addEventListener('click', () => {
+            switchTab('data');
+            setHistoryGame(g.twitch_game_id);
+          });
+          actionTd.appendChild(viewBtn);
+          tr.appendChild(actionTd);
+          oppTbody.appendChild(tr);
+        }
+      }
+
+      async function refreshOpportunities() {
+        const params = new URLSearchParams({
+          min_peak: String(parseInt(oppMinPeak.value, 10) || 0),
+          max_avg_vps: String(parseFloat(oppMaxVps.value) || 0),
+          min_live_fraction: String(parseFloat(oppMinLive.value) || 0),
+          sort_by: oppSort.value || 'avg_viewers_when_live',
+          limit: String(parseInt(oppLimit.value, 10) || 50),
+        });
+        const requestId = ++oppRequestId;
+        oppStatus.textContent = 'Loading…';
+        oppTbody.innerHTML = '<tr><td colspan="7" class="opportunities-empty">Loading…</td></tr>';
+        try {
+          const res = await fetch('/api/history/opportunities?' + params.toString());
+          if (!res.ok) throw new Error('Server returned ' + res.status);
+          const data = await res.json();
+          if (requestId !== oppRequestId) return;
+          renderOpportunityRows(data.games || []);
+          oppStatus.textContent = (data.games || []).length + ' games';
+        } catch (err) {
+          if (requestId !== oppRequestId) return;
+          oppStatus.textContent = 'Error: ' + err.message;
+          oppTbody.innerHTML = '<tr><td colspan="7" class="opportunities-empty">Failed to load.</td></tr>';
+        }
+      }
+
+      [oppMinPeak, oppMaxVps, oppMinLive, oppLimit].forEach(el => {
+        el.addEventListener('change', refreshOpportunities);
+      });
+      oppSort.addEventListener('change', refreshOpportunities);
+      oppRefresh.addEventListener('click', refreshOpportunities);
+
+      // ── Onboarding modal ──────────────────────────────────────────────
+      const onboardingModal = document.getElementById('onboarding-modal');
+      if (onboardingModal) {
+        const onboardingForm = document.getElementById('onboarding-form');
+        const onboardingBack = document.getElementById('onboarding-back');
+        const onboardingNext = document.getElementById('onboarding-next');
+        const onboardingDone = document.getElementById('onboarding-done');
+        const onboardingFeedback = document.getElementById('onboarding-feedback');
+        const stepDots = document.querySelectorAll('[data-onboarding-step]');
+        const stepPanels = document.querySelectorAll('[data-onboarding-panel]');
+        const sectionTitles = {{ onboarding_sections|map(attribute='title')|list|tojson }};
+        let currentStep = 0;
+        const totalSteps = stepPanels.length;
+
+        onboardingModal.showModal();
+
+        function updateOnboardingNav() {
+          stepDots.forEach((dot, i) => {
+            dot.classList.toggle('onboarding-step-dot--active', i === currentStep);
+            dot.classList.toggle('onboarding-step-dot--done', i < currentStep);
+          });
+          stepPanels.forEach((panel, i) => {
+            panel.classList.toggle('onboarding-step-panel--active', i === currentStep);
+          });
+          onboardingBack.hidden = currentStep === 0;
+          onboardingNext.hidden = currentStep === totalSteps - 1;
+          onboardingDone.hidden = currentStep !== totalSteps - 1;
+          onboardingFeedback.textContent = '';
+          onboardingFeedback.className = 'onboarding-feedback';
+        }
+
+        async function saveCurrentSection() {
+          const sectionTitle = sectionTitles[currentStep];
+          const formData = new FormData();
+          formData.set('settings_section', sectionTitle);
+
+          const panel = stepPanels[currentStep];
+          const inputs = panel.querySelectorAll('input, select');
+          const checkboxes = panel.querySelectorAll('input[type="checkbox"]:checked');
+          const nameMap = {};
+
+          inputs.forEach((input) => {
+            const name = input.name;
+            if (!name) return;
+            if (input.type === 'checkbox') {
+              if (input.checked) nameMap[name] = '1';
+            } else if (input.type === 'radio') {
+              if (input.checked) formData.append(name, input.value);
+            } else {
+              formData.append(name, input.value);
+            }
+          });
+          checkboxes.forEach((cb) => {
+            if (cb.type === 'checkbox' && cb.name) {
+              formData.append(cb.name, cb.value);
+            }
+          });
+
+          try {
+            const response = await fetch('{{ url_for("onboarding_save") }}', {
+              method: 'POST',
+              body: formData,
+              headers: { 'Accept': 'application/json' }
+            });
+            const data = await response.json();
+            if (!data.success) throw new Error(data.error);
+            return data;
+          } catch (error) {
+            throw error;
+          }
+        }
+
+        function showOnboardingFeedback(message, isError) {
+          if (!onboardingFeedback) return;
+          onboardingFeedback.textContent = message;
+          onboardingFeedback.className = 'onboarding-feedback' + (isError ? ' onboarding-feedback--error' : ' onboarding-feedback--success');
+        }
+
+        async function goNext() {
+          showOnboardingFeedback('Saving...', false);
+
+          try {
+            const result = await saveCurrentSection();
+            const msg = result.validation_error
+              ? 'Saved, but: ' + result.validation_error
+              : (result.steam_resolution_message || result.message);
+            showOnboardingFeedback(msg, !!result.validation_error);
+
+            if (currentStep < totalSteps - 1) {
+              currentStep++;
+              updateOnboardingNav();
+            }
+          } catch (error) {
+            showOnboardingFeedback(error.message || 'Save failed.', true);
+          }
+        }
+
+        async function finishOnboarding() {
+          showOnboardingFeedback('Finishing setup...', false);
+
+          try {
+            const result = await saveCurrentSection();
+            if (result.validation_error) {
+              showOnboardingFeedback(result.validation_error, true);
+              return;
+            }
+          } catch (error) {
+            showOnboardingFeedback(error.message || 'Save failed.', true);
+            return;
+          }
+
+          try {
+            const doneResponse = await fetch('{{ url_for("onboarding_done") }}', {
+              method: 'POST',
+              headers: { 'Accept': 'application/json' }
+            });
+            const doneData = await doneResponse.json();
+            if (!doneData.success) throw new Error(doneData.error);
+
+            onboardingModal.close();
+            window.location.reload();
+          } catch (error) {
+            showOnboardingFeedback('Setup complete but could not finalize: ' + (error.message || ''), true);
+          }
+        }
+
+        function goBack() {
+          if (currentStep > 0) {
+            currentStep--;
+            updateOnboardingNav();
+          }
+        }
+
+        onboardingBack.addEventListener('click', goBack);
+        onboardingNext.addEventListener('click', goNext);
+        onboardingDone.addEventListener('click', finishOnboarding);
+
+        stepDots.forEach((dot) => {
+          dot.addEventListener('click', () => {
+            const step = parseInt(dot.dataset.onboardingStep, 10);
+            if (step < currentStep) {
+              currentStep = step;
+              updateOnboardingNav();
+            }
+          });
+        });
+
+        updateOnboardingNav();
+
+        // Copy-to-clipboard for onboarding
+        document.querySelectorAll('#onboarding-modal [data-copy-target]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const input = document.getElementById(button.dataset.copyTarget);
+            if (!input) return;
+            const value = input.value || input.placeholder || '';
+            if (!value) return;
+            const originalText = button.textContent;
+            try {
+              await navigator.clipboard.writeText(value);
+              button.textContent = 'Copied';
+            } catch (error) {
+              input.focus();
+              input.select();
+              document.execCommand('copy');
+              button.textContent = 'Copied';
+            } finally {
+              setTimeout(() => { button.textContent = originalText; }, 1400);
+            }
+          });
+        });
+
+        // Check Steam username for onboarding
+        const onboardingSteamCheckBtn = document.querySelector('.onboarding-check-steam');
+        if (onboardingSteamCheckBtn) {
+          onboardingSteamCheckBtn.addEventListener('click', async () => {
+            const usernameInput = document.getElementById('STEAM_USER_ID');
+            const apiKeyInput = document.getElementById('STEAM_API_KEY');
+            const result = document.getElementById('onboarding-steam-result');
+            if (!usernameInput || !result) return;
+
+            const originalText = onboardingSteamCheckBtn.textContent;
+            onboardingSteamCheckBtn.disabled = true;
+            onboardingSteamCheckBtn.textContent = 'Checking...';
+            result.classList.remove('is-error', 'is-success');
+            result.textContent = '';
+
+            try {
+              const body = new URLSearchParams({
+                steam_user_id: usernameInput.value || '',
+                steam_api_key: apiKeyInput ? apiKeyInput.value || '' : ''
+              });
+              const response = await fetch('{{ url_for("onboarding_check_steam_username") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body
+              });
+              const data = await response.json();
+              if (!response.ok) throw new Error(data.error || 'Could not check that Steam username.');
+              if (data.should_update_input && data.value) {
+                usernameInput.value = data.value;
+              }
+              result.classList.add('is-success');
+              result.textContent = data.message || ('SteamID64: ' + data.steamid64);
+            } catch (error) {
+              result.classList.add('is-error');
+              result.textContent = error.message || String(error);
+            } finally {
+              onboardingSteamCheckBtn.disabled = false;
+              onboardingSteamCheckBtn.textContent = originalText;
+            }
+          });
+        }
+
+        // Directory picker for onboarding
+        document.querySelectorAll('#onboarding-modal [data-directory-picker]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            const fieldName = button.dataset.directoryPicker;
+            const input = document.getElementById(fieldName);
+            if (!input) return;
+            const pathFilename = button.dataset.pathFilename || '';
+
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = 'Opening...';
+            try {
+              const body = new URLSearchParams({
+                field: fieldName,
+                current: input.value || ''
+              });
+              const response = await fetch('{{ url_for("settings_pick_directory") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body
+              });
+              const data = await response.json();
+              if (!response.ok) throw new Error(data.error || 'Directory picker failed.');
+              if (data.path) {
+                const separator = data.path.includes('\\') ? '\\' : '/';
+                input.value = pathFilename
+                  ? data.path.replace(/[\\\/]$/, '') + separator + pathFilename
+                  : data.path;
+              }
+            } catch (error) {
+              window.alert(error.message || String(error));
+            } finally {
+              button.disabled = false;
+              button.textContent = originalText;
+            }
+          });
+        });
+      }
+
     </script>
+    <script src="{{ url_for('static', filename='sponsor-ribbon.js') }}"></script>
   </body>
 </html>

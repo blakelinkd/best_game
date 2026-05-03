@@ -46,13 +46,21 @@ class PlatformClient(abc.ABC):
             appid: Platform-specific game identifier
             
         Returns:
-            Dictionary with metadata fields like genres, categories, tags, short_description
+            Dictionary with metadata fields like genres, categories, tags, short_description, description
         """
         return {
             "genres": [],
             "categories": [],
             "tags": [],
             "short_description": "",
+            "description": "",
+            "release_date": "",
+            "release_timestamp": 0,
+            "release_coming_soon": False,
+            "is_on_sale": False,
+            "discount_percent": 0,
+            "price_initial_formatted": "",
+            "price_final_formatted": "",
         }
     
     @abc.abstractmethod

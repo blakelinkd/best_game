@@ -1,0 +1,237 @@
+/* OBS Twitch popout chat: Dracula dark mode overlay.
+   Use in OBS Browser Source -> Custom CSS for:
+   https://www.twitch.tv/popout/biotachyonic/chat */
+
+:root {
+  --chat-bg: rgba(40, 42, 54, 0.58);
+  --chat-bg-strong: rgba(40, 42, 54, 0.84);
+  --chat-border: rgba(189, 147, 249, 0.42);
+  --chat-text: #f8f8f2;
+  --chat-muted: #cfcfe8;
+  --chat-purple: #bd93f9;
+  --chat-pink: #ff79c6;
+  --chat-cyan: #8be9fd;
+  --chat-green: #50fa7b;
+  --chat-yellow: #f1fa8c;
+  --chat-orange: #ffb86c;
+  --chat-red: #ff5555;
+  --chat-shadow: rgba(0, 0, 0, 0.72);
+  --chat-radius: 8px;
+  --chat-font-size: clamp(18px, 2.15vw, 32px);
+  --chat-line-height: 1.28;
+}
+
+html,
+body,
+#root,
+.tw-root--theme-dark,
+.chat-room,
+.chat-shell,
+.stream-chat,
+.chat-list,
+.chat-scrollable-area__message-container {
+  background: transparent !important;
+}
+
+body {
+  margin: 0 !important;
+  overflow: hidden !important;
+  color: var(--chat-text) !important;
+  font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+/* Hide Twitch chrome so only messages show in OBS. */
+.chat-input,
+.chat-input__textarea,
+.chat-input__buttons-container,
+.chat-input__textarea-tools,
+.chat-input-tray,
+.chat-room__content > div:last-child,
+.chat-settings,
+.chat-room__header,
+.stream-chat-header,
+.channel-leaderboard,
+.community-highlight-stack__scroll-area,
+.chat-line__status,
+.chat-viewers-list,
+.twilight-minimal-root,
+[data-a-target="chat-input"],
+[data-a-target="chat-settings"],
+[data-a-target="chat-welcome-message"],
+[data-a-target="channel-leaderboard-container"] {
+  display: none !important;
+}
+
+/* Keep the chat anchored and narrow enough to avoid covering the whole game. */
+.chat-room,
+.stream-chat,
+.chat-list,
+.chat-scrollable-area__message-container {
+  width: 100% !important;
+  max-width: min(100vw, 620px) !important;
+}
+
+.chat-scrollable-area__message-container {
+  box-sizing: border-box !important;
+  padding: clamp(6px, 1.2vw, 14px) !important;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black 9%,
+    black 92%,
+    transparent 100%
+  ) !important;
+}
+
+.chat-line__message,
+.user-notice-line,
+.chat-line__moderation,
+.chat-line__status,
+.seventv-message,
+.ffz--inline {
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  margin: 0 0 clamp(6px, 0.8vw, 10px) 0 !important;
+  padding: clamp(6px, 0.85vw, 10px) clamp(9px, 1.2vw, 14px) !important;
+  border: 1px solid var(--chat-border) !important;
+  border-left: 4px solid var(--chat-purple) !important;
+  border-radius: var(--chat-radius) !important;
+  background:
+    linear-gradient(90deg, rgba(189, 147, 249, 0.22), transparent 42%),
+    var(--chat-bg) !important;
+  color: var(--chat-text) !important;
+  font-size: var(--chat-font-size) !important;
+  line-height: var(--chat-line-height) !important;
+  font-weight: 800 !important;
+  text-shadow:
+    0 2px 3px var(--chat-shadow),
+    0 0 8px rgba(0, 0, 0, 0.55) !important;
+  overflow-wrap: anywhere !important;
+  word-break: normal !important;
+  backdrop-filter: blur(3px) saturate(1.15) !important;
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.32),
+    inset 0 0 0 1px rgba(248, 248, 242, 0.04) !important;
+}
+
+.chat-line__message:hover,
+.user-notice-line:hover {
+  background:
+    linear-gradient(90deg, rgba(255, 121, 198, 0.22), transparent 42%),
+    var(--chat-bg-strong) !important;
+}
+
+.chat-line__username,
+.chat-author__display-name,
+[data-a-target="chat-message-username"] {
+  color: var(--chat-cyan) !important;
+  font-weight: 950 !important;
+  text-shadow:
+    0 2px 3px var(--chat-shadow),
+    0 0 8px rgba(139, 233, 253, 0.45) !important;
+}
+
+.chat-line__username::after,
+.chat-author__display-name::after,
+[data-a-target="chat-message-username"]::after {
+  color: var(--chat-muted) !important;
+  content: "  ";
+}
+
+.text-fragment,
+[data-a-target="chat-line-message-body"],
+.seventv-chat-message-body,
+.ffz-tooltip {
+  color: var(--chat-text) !important;
+}
+
+.chat-line__message--emote-button,
+.chat-image,
+.emote,
+img[class*="emote"],
+[data-a-target="emote-name"] {
+  width: calc(var(--chat-font-size) * 1.45) !important;
+  height: calc(var(--chat-font-size) * 1.45) !important;
+  max-width: 52px !important;
+  max-height: 52px !important;
+  vertical-align: middle !important;
+  filter:
+    drop-shadow(0 2px 2px rgba(0, 0, 0, 0.9))
+    drop-shadow(0 0 4px rgba(189, 147, 249, 0.38)) !important;
+}
+
+.chat-badge,
+[data-a-target="chat-badge"] {
+  width: calc(var(--chat-font-size) * 0.95) !important;
+  height: calc(var(--chat-font-size) * 0.95) !important;
+  margin-right: 0.22em !important;
+  vertical-align: -0.13em !important;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85)) !important;
+}
+
+.mention-fragment,
+.chat-line__message-mention,
+[data-a-target="chat-message-mention"] {
+  color: #282a36 !important;
+  background: var(--chat-yellow) !important;
+  border-radius: 5px !important;
+  padding: 0.03em 0.22em !important;
+  font-weight: 950 !important;
+  text-shadow: none !important;
+}
+
+a,
+.link-fragment {
+  color: var(--chat-green) !important;
+  font-weight: 900 !important;
+  text-decoration: none !important;
+}
+
+.user-notice-line {
+  border-left-color: var(--chat-pink) !important;
+  background:
+    linear-gradient(90deg, rgba(255, 121, 198, 0.28), transparent 48%),
+    rgba(40, 42, 54, 0.72) !important;
+}
+
+.user-notice-line .chat-line__message,
+.user-notice-line__message,
+.user-notice-line__line {
+  color: var(--chat-yellow) !important;
+  font-weight: 950 !important;
+}
+
+.chat-line__message--deleted {
+  opacity: 0.38 !important;
+  filter: grayscale(0.7) !important;
+}
+
+/* Smaller OBS sources still stay legible without eating the whole screen. */
+@media (max-width: 420px) {
+  :root {
+    --chat-font-size: clamp(16px, 4.8vw, 22px);
+  }
+
+  .chat-scrollable-area__message-container {
+    padding: 6px !important;
+  }
+
+  .chat-line__message,
+  .user-notice-line {
+    max-width: 96vw !important;
+  }
+}
+
+/* Optional: add .compact to the browser source body through OBS if you want less coverage. */
+body.compact {
+  --chat-font-size: clamp(15px, 1.6vw, 24px);
+  --chat-bg: rgba(40, 42, 54, 0.42);
+}
+
+body.compact .chat-line__message,
+body.compact .user-notice-line {
+  padding: 5px 9px !important;
+  margin-bottom: 5px !important;
+}

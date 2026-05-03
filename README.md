@@ -37,7 +37,26 @@ TWITCH_CLIENT_ID=your_twitch_client_id_here
 TWITCH_CLIENT_SECRET=your_twitch_client_secret_here
 ```
 
-`STEAM_USER_ID` may be either your SteamID64 or the numeric folder name under `Steam/userdata`.
+You can also start the app and open **Settings** from the dashboard. The settings page writes credentials and local paths to `.env`, which is ignored by git so release packages do not include your personal keys.
+
+`STEAM_USER_ID` may be your Steam custom profile name, Steam profile URL, SteamID64, or the numeric folder name under `Steam/userdata`. If you enter a custom profile name in Settings, the app resolves it with Steam's `ResolveVanityURL` API after your Steam Web API key is saved.
+
+### Retro console libraries
+
+Retro platforms are optional and are disabled unless `RETRO_SYSTEMS` is set. Build the local retro catalog first:
+
+```powershell
+python retro_collector.py
+```
+
+Then enable every supported system, or a comma-separated subset:
+
+```env
+RETRO_SYSTEMS=all
+# RETRO_SYSTEMS=nes,snes,n64,genesis,ps1
+```
+
+The dashboard reads `cache/retro_games.json`, treats each console as its own platform, and uses libretro thumbnail URLs directly instead of downloading every retro image into `static/cache/`.
 
 ## Run
 
@@ -63,26 +82,42 @@ python main.py --no-browser
 
 Each game card has an **Update stream info** button. It opens a modal with the Twitch category filled from the matched game, title/language filled from the current channel when available, and Twitch-safe tags seeded from cached Steam Store metadata for that game. Tags are normalized to Twitch's channel tag rules: no spaces, no special characters, max 25 characters each, deduplicated, and capped at 10 tags.
 
-To enable updates:
-
-1. In your Twitch Developer Console, add this OAuth redirect URL:
-
-```text
-http://127.0.0.1:5000/auth/twitch/callback
-```
-
-2. Start the app and click **Connect Twitch**.
-3. Approve the `channel:manage:broadcast` permission for your broadcaster account.
-
-The app stores the user token and refresh token locally in `cache/twitch_user_token.json`, which is ignored by git. You do not need to paste `TWITCH_USER_ACCESS_TOKEN` manually.
-
-Optionally, you may set a broadcaster login or ID as a fallback:
+The **AI tags** button uses LM Studio's OpenAI-compatible local server. Start the server in LM Studio before clicking it. By default the app connects to `http://127.0.0.1:1234` and uses the first model LM Studio reports as loaded. You can override either value in `.env`:
 
 ```env
-TWITCH_BROADCASTER_ID=your_twitch_login_or_user_id_here
+LM_STUDIO_BASE_URL=http://127.0.0.1:1234
+LM_STUDIO_MODEL=
+LM_STUDIO_TIMEOUT=30
 ```
 
-`TWITCH_BROADCASTER_ID` may be either your numeric Twitch user ID or your Twitch login name, for example `biotachyonic`. The app updates:
+If the Flask app is running in Ubuntu but LM Studio is running somewhere else, set `LM_STUDIO_BASE_URL` to the address that Ubuntu can reach.
+
+To enable updates:
+
+1. Create a Twitch app in the Developer Console.
+2. Add the OAuth redirect URL shown on the Settings page. The default local URL is:
+
+```text
+https://localhost:5000/auth/twitch/callback
+```
+
+The app runs locally over HTTPS by default because Twitch rejects non-HTTPS redirect URLs during application registration. Your browser may show a localhost certificate warning the first time you open the app. This is expected for the local self-signed certificate; continue to localhost to finish Twitch setup.
+
+3. Keep the Twitch app client type set to **Confidential**.
+4. Open the app's **Manage** page, copy the Client ID, click **New Secret**, and copy the secret.
+5. Paste both values into this app's Settings page.
+6. Start the app and click **Connect Twitch**.
+7. Approve the stream update permission for your broadcaster account.
+
+The app stores the Twitch login token locally in `cache/twitch_user_token.json`, which is ignored by git.
+
+Optionally, you may set your Twitch username as a fallback:
+
+```env
+TWITCH_BROADCASTER_ID=your_twitch_username_here
+```
+
+For example, `TWITCH_BROADCASTER_ID=biotachyonic`. The app updates:
 
 - Twitch category/game
 - Stream title

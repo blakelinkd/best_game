@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings - Steam Twitch Viewer Library</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="shell topbar__inner settings-topbar">
+        <div>
+          <p class="eyebrow">Local Configuration</p>
+          <h1>Settings</h1>
+        </div>
+        <nav class="settings-nav" aria-label="Settings navigation">
+          <a class="button-link secondary-button" href="{{ url_for('index') }}">Dashboard</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="shell settings-page">
+      <section class="settings-note">
+        <div>
+          <strong>Credentials stay local.</strong>
+          <span>Values are written to {{ env_file }}. The repository ignores this file, so release builds do not include your keys or secrets.</span>
+        </div>
+      </section>
+
+      <div id="notice-region" aria-live="polite">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <section class="notice notice--{{ category }}">
+                <strong>{{ "Saved" if category == "success" else "Settings need attention" }}</strong>
+                <span>{{ message }}</span>
+              </section>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+      </div>
+
+      {% if validation_error %}
+        <section class="notice notice--error">
+          <strong>Required settings are missing.</strong>
+          <span>{{ validation_error }}</span>
+        </section>
+      {% endif %}
+
+      <form class="settings-form" method="post" action="{{ url_for('settings') }}">
+        {% for section in sections %}
+          <section class="settings-section">
+            <div class="settings-section__header">
+              <h2>{{ section.title }}</h2>
+              <p>{{ section.description }}</p>
+              {% if section.title == "Twitch" %}
+                <p>Paste the OAuth redirect URL below into your Twitch application's OAuth Redirect URLs list. The default is <code>{{ default_twitch_redirect_uri }}</code> and uses HTTPS because Twitch rejects non-HTTPS redirect URLs during application registration.</p>
+                <p>Your browser may show a certificate warning for this local HTTPS address. That is expected for a local self-signed certificate; continue to localhost to finish Twitch setup.</p>
+                <p>When creating the Twitch app, keep the client type set to <strong>Confidential</strong>. After creating it, open Manage and copy the <strong>Client ID</strong> value into this app, then click New Secret and copy that secret here.</p>
+              {% endif %}
+            </div>
+            <div class="settings-grid">
+              {% for field in section.fields %}
+                {% if field.type == "checkbox_group" %}
+                  <fieldset class="settings-field settings-field--group">
+                    <legend>
+                      {{ field.label }}
+                      {% if field.required %}<em>Required</em>{% endif %}
+                      {% if field.link %}<a class="settings-field__link" href="{{ field.link }}" target="_blank" rel="noopener noreferrer">{{ field.link_label or "Open" }}</a>{% endif %}
+                    </legend>
+                    <div class="settings-checkbox-grid">
+                      {% for option in field.options %}
+                        <label class="settings-check">
+                          <input type="checkbox" name="{{ field.name }}" value="{{ option.value }}" {% if option.checked %}checked{% endif %}>
+                          <span>{{ option.label }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                    {% if field.help %}<small>{{ field.help }}</small>{% endif %}
+                  </fieldset>
+                {% elif field.type == "checkbox" %}
+                  <label class="settings-field settings-field--checkbox" for="{{ field.name }}">
+                    <span>
+                      {{ field.label }}
+                      {% if field.required %}<em>Required</em>{% endif %}
+                      {% if field.link %}<a class="settings-field__link" href="{{ field.link }}" target="_blank" rel="noopener noreferrer">{{ field.link_label or "Open" }}</a>{% endif %}
+                    </span>
+                    <input type="checkbox" id="{{ field.name }}" name="{{ field.name }}" value="1" {% if field.checked %}checked{% endif %}>
+                    {% if field.help %}<small>{{ field.help }}</small>{% endif %}
+                  </label>
+                {% else %}
+                  <div class="settings-field">
+                    <label class="settings-field__label" for="{{ field.name }}">
+                      {{ field.label }}
+                      {% if field.required %}<em>Required</em>{% endif %}
+                      {% if field.link %}<a class="settings-field__link" href="{{ field.link }}" target="_blank" rel="noopener noreferrer">{{ field.link_label or "Open" }}</a>{% endif %}
+                    </label>
+                    {% if field.type == "directory" %}
+                      <div class="directory-input">
+                        <input
+                          type="text"
+                          id="{{ field.name }}"
+                          name="{{ field.name }}"
+                          value="{{ field.value }}"
+                          readonly
+                          autocomplete="off">
+                        <button
+                          type="button"
+                          class="secondary-button directory-input__button"
+                          data-directory-picker="{{ field.name }}"
+                          data-path-filename="{{ field.path_filename or '' }}">Browse</button>
+                      </div>
+                    {% elif field.type == "copyable_url" %}
+                      <div class="copyable-input">
+                        <input
+                          type="url"
+                          id="{{ field.name }}"
+                          name="{{ field.name }}"
+                          value="{{ field.value }}"
+                          placeholder="{{ default_twitch_redirect_uri }}"
+                          autocomplete="off">
+                        <button type="button" class="secondary-button copyable-input__button" data-copy-target="{{ field.name }}">Copy</button>
+                      </div>
+                      <small>Leave this as the default unless your app is running somewhere else.</small>
+                    {% elif field.check_steam_username %}
+                      <div class="steam-username-input">
+                        <input
+                          type="text"
+                          id="{{ field.name }}"
+                          name="{{ field.name }}"
+                          value="{{ field.value }}"
+                          placeholder="{{ field.placeholder or 'Steam profile name or ID' }}"
+                          autocomplete="off">
+                        <button type="button" class="secondary-button steam-username-input__button" id="check-steam-username">Check Username</button>
+                      </div>
+                      <small class="settings-check-result" id="steam-username-result" aria-live="polite"></small>
+                    {% else %}
+                      <input
+                        type="{{ 'password' if field.secret else (field.type or 'text') }}"
+                        id="{{ field.name }}"
+                        name="{{ field.name }}"
+                        value="{{ field.value }}"
+                        {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% elif field.secret and field.has_value %}placeholder="Saved. Leave blank to keep current value."{% endif %}
+                        {% if field.type == "number" %}step="1"{% endif %}
+                        autocomplete="{{ 'new-password' if field.secret else 'off' }}">
+                    {% endif %}
+                    {% if field.help %}<small>{{ field.help }}</small>{% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
+            <div class="settings-section__actions">
+              <button type="submit" name="settings_section" value="{{ section.title }}">Save {{ section.title }}</button>
+            </div>
+          </section>
+        {% endfor %}
+
+      </form>
+    </main>
+    <script>
+      const steamUsernameButton = document.getElementById('check-steam-username');
+      document.querySelectorAll('[data-copy-target]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const input = document.getElementById(button.dataset.copyTarget);
+          if (!input) return;
+          const value = input.value || input.placeholder || '';
+          if (!value) return;
+
+          const originalText = button.textContent;
+          try {
+            await navigator.clipboard.writeText(value);
+            button.textContent = 'Copied';
+          } catch (error) {
+            input.focus();
+            input.select();
+            document.execCommand('copy');
+            button.textContent = 'Copied';
+          } finally {
+            setTimeout(() => {
+              button.textContent = originalText;
+            }, 1400);
+          }
+        });
+      });
+
+      if (steamUsernameButton) {
+        steamUsernameButton.addEventListener('click', async () => {
+          const usernameInput = document.getElementById('STEAM_USER_ID');
+          const apiKeyInput = document.getElementById('STEAM_API_KEY');
+          const result = document.getElementById('steam-username-result');
+          if (!usernameInput || !result) return;
+
+          const originalText = steamUsernameButton.textContent;
+          steamUsernameButton.disabled = true;
+          steamUsernameButton.textContent = 'Checking...';
+          result.classList.remove('is-error', 'is-success');
+          result.textContent = '';
+          try {
+            const body = new URLSearchParams({
+              steam_user_id: usernameInput.value || '',
+              steam_api_key: apiKeyInput ? apiKeyInput.value || '' : ''
+            });
+            const response = await fetch('{{ url_for("settings_check_steam_username") }}', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Could not check that Steam username.');
+            if (data.should_update_input && data.value) {
+              usernameInput.value = data.value;
+            }
+            result.classList.add('is-success');
+            result.textContent = data.message || ('SteamID64: ' + data.steamid64);
+          } catch (error) {
+            result.classList.add('is-error');
+            result.textContent = error.message || String(error);
+          } finally {
+            steamUsernameButton.disabled = false;
+            steamUsernameButton.textContent = originalText;
+          }
+        });
+      }
+
+      document.querySelectorAll('[data-directory-picker]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const fieldName = button.dataset.directoryPicker;
+          const input = document.getElementById(fieldName);
+          if (!input) return;
+          const pathFilename = button.dataset.pathFilename || '';
+
+          const originalText = button.textContent;
+          button.disabled = true;
+          button.textContent = 'Opening...';
+          try {
+            const body = new URLSearchParams({
+              field: fieldName,
+              current: input.value || ''
+            });
+            const response = await fetch('{{ url_for("settings_pick_directory") }}', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Directory picker failed.');
+            if (data.path) {
+              const separator = data.path.includes('\\') ? '\\' : '/';
+              input.value = pathFilename
+                ? data.path.replace(/[\\\/]$/, '') + separator + pathFilename
+                : data.path;
+            }
+          } catch (error) {
+            window.alert(error.message || String(error));
+          } finally {
+            button.disabled = false;
+            button.textContent = originalText;
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

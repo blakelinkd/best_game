@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Twitch OBS Overlay Setup</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="setup">
+  <main class="setup-panel">
+    <h1>Twitch OBS Overlay Setup</h1>
+    <p>
+      Save your public Twitch Client ID, authenticate this session, then use the
+      overlay URL in OBS. No client secret is used or stored.
+    </p>
+
+    <section class="setup-grid">
+      <label>
+        Twitch channel
+        <input id="channel" autocomplete="off" spellcheck="false">
+      </label>
+
+      <label>
+        Twitch Client ID
+        <input id="clientId" autocomplete="off" spellcheck="false">
+      </label>
+    </section>
+
+    <div class="actions">
+      <button id="save" type="button">Save Settings</button>
+      <button id="connect" class="primary" type="button">Connect Twitch</button>
+      <button id="disconnect" class="danger" type="button">Forget Token</button>
+      <a class="button" href="/overlay" target="_blank" rel="noreferrer">Open Overlay</a>
+    </div>
+
+    <p class="status-line" id="status"></p>
+
+    <p class="note">
+      Register the redirect URL exactly as
+      <span class="code" id="redirectUri">http://127.0.0.1:3757/setup.html</span>.
+      Use this OBS Browser Source URL:
+      <span class="code">http://127.0.0.1:3757/overlay</span>.
+    </p>
+  </main>
+
+  <script src="/setup.js"></script>
+</body>
+</html>

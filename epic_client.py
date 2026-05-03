@@ -202,14 +202,14 @@ class EpicClient(PlatformClient):
 
         cats = entry.get('categories', [])
         cat_names = [c.get('path', '') for c in cats if c.get('path')]
-        description = entry.get('description', '') or entry.get('longDescription', '')
-        if description and len(description) > 500:
-            description = description[:497] + "..."
+        short_description = entry.get('description', '').strip()
+        description = (entry.get('longDescription', '') or short_description).strip()
         return {
             "genres": [],
             "categories": cat_names,
             "tags": [],
-            "short_description": description.strip(),
+            "short_description": short_description,
+            "description": description,
         }
 
     def get_image_url(self, appid: str) -> Optional[str]:

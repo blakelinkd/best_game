@@ -1,6 +1,8 @@
 import json
 import os
+import re
 import time
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Set
 import requests
 from ratelimit import limits, sleep_and_retry
@@ -14,6 +16,48 @@ class SteamClient(PlatformClient, RateLimitedClientMixin):
 
     OWNED_GAMES_URL = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
     STORE_APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
+
+    @staticmethod
+    def _clean_store_description(value: str) -> str:
+        if not value:
+            return ""
+        try:
+            from bs4 import BeautifulSoup
+            text = BeautifulSoup(value, "html.parser").get_text(" ", strip=True)
+        except Exception:
+            text = re.sub(r"<[^>]+>", " ", value)
+        return " ".join(text.split())
+
+    @staticmethod
+    def _release_date_sort_value(value: str) -> int:
+        """Return a Unix timestamp for Steam's human release date strings."""
+        if not value:
+            return 0
+
+        cleaned = " ".join(str(value).replace(",", ", ").split())
+        for fmt in (
+            "%b %d, %Y",
+            "%B %d, %Y",
+            "%b %d %Y",
+            "%B %d %Y",
+            "%d %b, %Y",
+            "%d %B, %Y",
+            "%d %b %Y",
+            "%d %B %Y",
+            "%b %Y",
+            "%B %Y",
+            "%Y",
+        ):
+            try:
+                parsed = datetime.strptime(cleaned, fmt)
+                return int(parsed.replace(tzinfo=timezone.utc).timestamp())
+            except ValueError:
+                continue
+
+        year_match = re.search(r"\b(19|20)\d{2}\b", cleaned)
+        if year_match:
+            return int(datetime(int(year_match.group(0)), 1, 1, tzinfo=timezone.utc).timestamp())
+        return 0
     
     @property
     def platform_name(self) -> str:
@@ -336,14 +380,29 @@ class SteamClient(PlatformClient, RateLimitedClientMixin):
                 self.STORE_APPDETAILS_URL,
                 params={
                     "appids": appid,
-                    "filters": "basic,genres,categories",
+                    "filters": "basic,genres,categories,detailed_description,about_the_game,release_date,price_overview",
+                    "cc": "US",
+                    "l": "english",
                 },
                 headers={"User-Agent": "Mozilla/5.0"},
             )
             response.raise_for_status()
             payload = response.json().get(str(appid), {})
             if not payload.get("success"):
-                return {"genres": [], "categories": [], "tags": [], "short_description": ""}
+                return {
+                    "genres": [],
+                    "categories": [],
+                    "tags": [],
+                    "short_description": "",
+                    "description": "",
+                    "release_date": "",
+                    "release_timestamp": 0,
+                    "release_coming_soon": False,
+                    "is_on_sale": False,
+                    "discount_percent": 0,
+                    "price_initial_formatted": "",
+                    "price_final_formatted": "",
+                }
 
             data = payload.get("data") or {}
             genres = [
@@ -366,21 +425,47 @@ class SteamClient(PlatformClient, RateLimitedClientMixin):
                     tags.append(normalized)
                     seen.add(key)
             
-            # Extract short description (brief one-liner about the game)
             short_description = data.get("short_description", "").strip()
-            # Limit length to avoid overly long descriptions
-            if len(short_description) > 500:
-                short_description = short_description[:497] + "..."
+            description = self._clean_store_description(
+                data.get("detailed_description") or data.get("about_the_game") or short_description
+            )
+            release_info = data.get("release_date") or {}
+            release_date = str(release_info.get("date") or "").strip() if isinstance(release_info, dict) else ""
+            price = data.get("price_overview") or {}
+            discount_percent = int(price.get("discount_percent") or 0) if isinstance(price, dict) else 0
+            initial_price = int(price.get("initial") or 0) if isinstance(price, dict) else 0
+            final_price = int(price.get("final") or 0) if isinstance(price, dict) else 0
 
             return {
                 "genres": genres,
                 "categories": categories,
                 "tags": tags,
                 "short_description": short_description,
+                "description": description,
+                "release_date": release_date,
+                "release_timestamp": self._release_date_sort_value(release_date),
+                "release_coming_soon": bool(release_info.get("coming_soon")) if isinstance(release_info, dict) else False,
+                "is_on_sale": discount_percent > 0 and (not initial_price or final_price < initial_price),
+                "discount_percent": discount_percent,
+                "price_initial_formatted": str(price.get("initial_formatted") or "") if isinstance(price, dict) else "",
+                "price_final_formatted": str(price.get("final_formatted") or "") if isinstance(price, dict) else "",
             }
         except Exception as e:
             print(f"Error getting Steam Store metadata for appid {appid}: {self._safe_error_message(e)}")
-            return {"genres": [], "categories": [], "tags": [], "short_description": ""}
+            return {
+                "genres": [],
+                "categories": [],
+                "tags": [],
+                "short_description": "",
+                "description": "",
+                "release_date": "",
+                "release_timestamp": 0,
+                "release_coming_soon": False,
+                "is_on_sale": False,
+                "discount_percent": 0,
+                "price_initial_formatted": "",
+                "price_final_formatted": "",
+            }
     
     def get_game_names(self, appids: List[int]) -> Dict[int, str]:
         """
@@ -406,10 +491,10 @@ class SteamClient(PlatformClient, RateLimitedClientMixin):
     def get_image_url(self, appid: str) -> Optional[str]:
         """
         Get Steam header image URL for a game.
-        
+
         Args:
             appid: Steam app ID
-            
+
         Returns:
             URL to Steam header image
         """
@@ -417,6 +502,24 @@ class SteamClient(PlatformClient, RateLimitedClientMixin):
             appid_int = int(appid)
             return f"https://cdn.cloudflare.steamstatic.com/steam/apps/{appid_int}/header.jpg"
         except (TypeError, ValueError):
+            return None
+
+    def find_appid_by_name(self, game_name: str) -> Optional[int]:
+        """Search Steam store for a game by exact name and return its appid."""
+        try:
+            response = self._steam_store_get(
+                "https://store.steampowered.com/api/storesearch/",
+                params={"term": game_name, "l": "english", "cc": "US", "category1": "998"},
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            response.raise_for_status()
+            name_lower = game_name.lower()
+            for item in response.json().get("items", []):
+                if item.get("name", "").lower() == name_lower:
+                    return item.get("id")
+            return None
+        except Exception as e:
+            print(f"Error searching Steam for '{game_name}': {e}")
             return None
      
     def test_connection(self) -> bool:

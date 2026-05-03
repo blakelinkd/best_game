@@ -4,9 +4,14 @@ from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 from ratelimit import limits, sleep_and_retry
 from config import config
+from viewer_metrics import calculate_stream_viewer_stats
 
 _app_token_cache = {}
 _app_token_key = "app_token"
+
+
+def clear_app_token_cache():
+    _app_token_cache.clear()
 
 
 class TwitchClient:
@@ -369,6 +374,42 @@ class TwitchClient:
         
         return total_viewers, stream_count
 
+    def get_game_viewer_stats(self, game_id: str) -> Dict:
+        """
+        Get viewer distribution stats for a specific Twitch category.
+
+        Returns totals plus per-stream averages used to avoid over-ranking
+        categories dominated by one very large stream.
+        """
+        params = {
+            'game_id': game_id,
+            'first': 100
+        }
+
+        stream_viewer_counts = []
+        twitch_tags = []
+        cursor = None
+
+        while True:
+            if cursor:
+                params['after'] = cursor
+
+            data = self._make_request(config.TWITCH_STREAMS_URL, params)
+            if not data or 'data' not in data:
+                break
+
+            for stream in data['data']:
+                stream_viewer_counts.append(int(stream.get('viewer_count', 0) or 0))
+                twitch_tags.extend(stream.get('tags') or [])
+
+            cursor = data.get('pagination', {}).get('cursor')
+            if not cursor:
+                break
+
+        stats = calculate_stream_viewer_stats(stream_viewer_counts)
+        stats["twitch_tags"] = twitch_tags
+        return stats
+
     def get_game_viewer_counts(self, game_ids: List[str]) -> Dict[str, Tuple[int, int]]:
         """
         Get total viewer counts and stream counts for multiple Twitch categories.
@@ -416,6 +457,57 @@ class TwitchClient:
 
         # Combine into tuples
         return {game_id: (viewer_counts[game_id], stream_counts[game_id]) for game_id in unique_ids}
+
+    def get_game_viewer_stats_for_games(self, game_ids: List[str]) -> Dict[str, Dict]:
+        """
+        Get viewer distribution stats for multiple Twitch categories.
+
+        Twitch pages streams across all requested categories, so this collects
+        each stream's viewer count per category before deriving whale-adjusted
+        averages.
+        """
+        unique_ids = []
+        seen = set()
+        for game_id in game_ids:
+            game_id = str(game_id)
+            if game_id and game_id not in seen:
+                unique_ids.append(game_id)
+                seen.add(game_id)
+
+        stream_viewer_counts = {game_id: [] for game_id in unique_ids}
+        twitch_tags = {game_id: [] for game_id in unique_ids}
+        chunk_size = 100
+
+        for offset in range(0, len(unique_ids), chunk_size):
+            chunk = unique_ids[offset:offset + chunk_size]
+            cursor = None
+
+            while True:
+                params = [("first", 100)]
+                params.extend(("game_id", game_id) for game_id in chunk)
+                if cursor:
+                    params.append(("after", cursor))
+
+                data = self._make_request(config.TWITCH_STREAMS_URL, params)
+                if not data or "data" not in data:
+                    break
+
+                for stream in data["data"]:
+                    game_id = str(stream.get("game_id", ""))
+                    if game_id in stream_viewer_counts:
+                        stream_viewer_counts[game_id].append(int(stream.get("viewer_count", 0) or 0))
+                        twitch_tags[game_id].extend(stream.get("tags") or [])
+
+                cursor = data.get("pagination", {}).get("cursor")
+                if not cursor:
+                    break
+
+        result = {}
+        for game_id, counts in stream_viewer_counts.items():
+            stats = calculate_stream_viewer_stats(counts)
+            stats["twitch_tags"] = twitch_tags.get(game_id, [])
+            result[game_id] = stats
+        return result
     
     def get_top_games(self, limit: int = 100) -> List[Dict]:
         """

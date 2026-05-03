@@ -100,6 +100,132 @@ def test_twitch_safe_tags():
         return False
 
 
+def test_llm_tag_parsing():
+    print("\nTesting LLM tag response parsing...")
+    try:
+        import main
+
+        cases = [
+            ('["first playthrough", "co-op", "survival horror"]', ["firstplaythrough", "coop", "survivalhorror"]),
+            ('{"tags": ["FPS", "Ranked", "Multi-player"]}', ["fps", "ranked", "multiplayer"]),
+            ("Tags: boss rush, challenge run, new game plus", ["bossrush", "challengerun", "newgameplus"]),
+            ("<think>Maybe [\"bad\"]</think>[\"horror\", \"indie\"]", ["horror", "indie"]),
+        ]
+        for content, expected in cases:
+            tags = main.twitch_safe_tags(main._extract_tags_from_llm_content(content))
+            if tags != expected:
+                print(f"[ERROR] Unexpected parsed tags for {content!r}: {tags}")
+                return False
+
+        print("[OK] LLM tag responses parse from JSON and plain text")
+        return True
+    except Exception as e:
+        print(f"[ERROR] LLM tag parsing test failed: {e}")
+        return False
+
+
+def test_generate_title_extra_context():
+    print("\nTesting generated title extra context...")
+    try:
+        import main
+
+        original_model = main.config.OLLAMA_MODEL
+        original_post = main.requests.post
+        original_service = main.ViewerService
+        captured_chat_payloads = []
+        saved_titles = []
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self._payload
+
+        def fake_post(url, json=None, timeout=None):
+            if url.endswith("/api/chat"):
+                captured_chat_payloads.append(json)
+                return FakeResponse({"message": {"content": '{"title": "Valheim Iron Farming Run"}'}})
+            return FakeResponse({})
+
+        class MockViewerService:
+            def save_game_generated_title(self, appid, platform, title):
+                saved_titles.append((appid, platform, title))
+                return title
+
+        main.config.OLLAMA_MODEL = "mock-model"
+        main.requests.post = fake_post
+        main.ViewerService = MockViewerService
+
+        client = main.app.test_client()
+        context_response = client.post(
+            "/api/generate-title",
+            json={
+                "appid": "892970",
+                "platform": "steam",
+                "game_name": "Valheim",
+                "platform_tags": ["Survival", "Crafting"],
+                "game_description": "A survival and exploration game.",
+                "current_title": "Playing Valheim",
+                "extra_context": "farming iron for the next base build",
+            },
+        )
+        if context_response.status_code != 200:
+            print(f"[ERROR] Expected HTTP 200, got {context_response.status_code}")
+            return False
+
+        context_prompt = captured_chat_payloads[-1]["messages"][1]["content"]
+        if "Session notes from the streamer: farming iron for the next base build" not in context_prompt:
+            print("[ERROR] Extra title context was not included in the LLM prompt")
+            return False
+        if "The title must clearly mention the streamer's activity/objective" not in context_prompt:
+            print("[ERROR] Extra title context was not marked as required title context")
+            return False
+        if "specific item, resource, boss, location, build, challenge, or goal" not in context_prompt:
+            print("[ERROR] Extra title context did not tell the LLM to preserve specific details")
+            return False
+        if saved_titles:
+            print("[ERROR] Context-specific generated title should not overwrite the saved game title")
+            return False
+
+        plain_response = client.post(
+            "/api/generate-title",
+            json={
+                "appid": "892970",
+                "platform": "steam",
+                "game_name": "Valheim",
+                "platform_tags": ["Survival", "Crafting"],
+            },
+        )
+        if plain_response.status_code != 200:
+            print(f"[ERROR] Expected HTTP 200 for plain title generation, got {plain_response.status_code}")
+            return False
+
+        plain_prompt = captured_chat_payloads[-1]["messages"][1]["content"]
+        if "Session notes from the streamer:" in plain_prompt:
+            print("[ERROR] Empty extra context should not add a session-notes prompt block")
+            return False
+        if "do not invent a stream activity" not in plain_prompt:
+            print("[ERROR] Empty extra context should tell the LLM not to invent session activity")
+            return False
+        if saved_titles != [("892970", "steam", "Valheim Iron Farming Run")]:
+            print(f"[ERROR] Plain generated title was not persisted as expected: {saved_titles}")
+            return False
+
+        main.config.OLLAMA_MODEL = original_model
+        main.requests.post = original_post
+        main.ViewerService = original_service
+
+        print("[OK] Generated title endpoint passes optional context without stale persistence")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Generated title context test failed: {e}")
+        return False
+
+
 def test_flask_route():
     print("\nTesting Flask route with mocked service...")
     try:
@@ -345,17 +471,22 @@ def test_viewer_cache():
         from viewer_service import ViewerService
 
         class FakeSteamClient:
+            platform_name = "steam"
+
             def __init__(self):
                 self.owned_calls = 0
                 self.asset_calls = 0
                 self.metadata_calls = 0
 
-            def get_owned_games(self):
+            def get_owned_games(self, force_refresh=False):
                 self.owned_calls += 1
                 return [{"appid": 10, "name": "Counter-Strike", "playtime_forever": 120}]
 
             def get_installed_appids(self):
                 return {10}
+
+            def get_image_url(self, appid):
+                return None
 
             def get_store_metadata(self, appid):
                 self.metadata_calls += 1
@@ -363,6 +494,8 @@ def test_viewer_cache():
                     "genres": ["Action"],
                     "categories": ["Multi-player"],
                     "tags": ["Action", "Multi-player"],
+                    "short_description": "Short store summary.",
+                    "description": "Full store description with combat, teams, maps, and ranked play.",
                 }
 
             def _steam_store_get(self, url, **kwargs):
@@ -405,7 +538,7 @@ def test_viewer_cache():
             steam = FakeSteamClient()
             twitch = FakeTwitchClient()
             service = ViewerService(
-                steam_client=steam,
+                platform_clients=[steam],
                 twitch_client=twitch,
                 cache_file=os.path.join(temp_dir, "viewer_cache.json"),
                 legacy_cache_file=os.path.join(temp_dir, "missing_legacy_cache.json"),
@@ -424,6 +557,9 @@ def test_viewer_cache():
                 return False
             if first["games"][0].get("steam_tags") != ["action", "multiplayer"]:
                 print(f"[ERROR] Expected Steam tags on rendered game, got {first['games'][0].get('steam_tags')}")
+                return False
+            if first["games"][0].get("steam_description") != "Full store description with combat, teams, maps, and ranked play.":
+                print(f"[ERROR] Expected full Steam description on rendered game, got {first['games'][0].get('steam_description')}")
                 return False
             if steam.owned_calls != 1:
                 print(f"[ERROR] Owned games were fetched {steam.owned_calls} times")
@@ -448,6 +584,109 @@ def test_viewer_cache():
         return False
 
 
+def test_platform_interleaving():
+    print("\nTesting processing priority order...")
+    try:
+        from viewer_service import ViewerService
+
+        class FakePlatformClient:
+            def __init__(self, platform_name, games):
+                self.platform_name = platform_name
+                self._games = games
+
+            def get_owned_games(self, force_refresh=False):
+                return [
+                    {
+                        "appid": game["appid"],
+                        "name": game["name"],
+                        "platform": self.platform_name,
+                        "playtime_forever": game.get("playtime_forever", 0),
+                        "rtime_last_played": game.get("rtime_last_played", 0),
+                    }
+                    for game in self._games
+                ]
+
+            def get_installed_appids(self):
+                return set()
+
+        temp_dir = os.path.join(os.getcwd(), "test_cache_tmp")
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        os.makedirs(temp_dir)
+        try:
+            steam = FakePlatformClient("steam", [
+                {"appid": "s1", "name": "Recent Steam", "rtime_last_played": 300},
+                {"appid": "s2", "name": "Older Steam", "rtime_last_played": 200},
+                {"appid": "s3", "name": "Oldest Steam", "rtime_last_played": 100},
+            ])
+            nes = FakePlatformClient("nes", [
+                {"appid": "n1", "name": "Zelda"},
+                {"appid": "n2", "name": "Mario"},
+            ])
+            snes = FakePlatformClient("snes", [
+                {"appid": "sn1", "name": "Chrono Trigger"},
+            ])
+            service = ViewerService(
+                platform_clients=[steam, nes, snes],
+                cache_file=os.path.join(temp_dir, "viewer_cache.json"),
+                legacy_cache_file=os.path.join(temp_dir, "missing_legacy_cache.json"),
+            )
+            service.project_root = temp_dir
+
+            ordered = [
+                (game.get("platform"), game.get("appid"))
+                for game in service._ordered_owned_games()
+            ]
+            expected = [
+                ("steam", "s1"),
+                ("steam", "s2"),
+                ("steam", "s3"),
+                ("snes", "sn1"),
+                ("nes", "n2"),
+                ("nes", "n1"),
+            ]
+            if ordered != expected:
+                print(f"[ERROR] Expected recent/playtime priority order {expected}, got {ordered}")
+                return False
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        print("[OK] Processing prioritizes recently played games across platforms")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Platform interleaving test failed: {e}")
+        return False
+
+
+def test_whale_adjusted_metrics():
+    """Test that one huge stream does not inflate average-per-stream demand."""
+    try:
+        from viewer_metrics import calculate_discovery_score, calculate_stream_viewer_stats
+
+        whale_stats = calculate_stream_viewer_stats([9900, 1, 1, 1, 1, 1, 0, 0, 0, 0])
+        balanced_stats = calculate_stream_viewer_stats([18, 14, 12, 10, 8, 7, 6, 5, 4, 3])
+
+        if whale_stats["average_viewers_per_stream"] < 900:
+            print("[ERROR] Expected raw whale average to show the outlier")
+            return False
+        if whale_stats["adjusted_average_viewers_per_stream"] > 1:
+            print("[ERROR] Expected whale-adjusted average to ignore the outlier")
+            return False
+
+        score_args = ("viewer_count", "stream_count", "adjusted_average_viewers_per_stream", "median_viewers_per_stream", "top_stream_viewer_share")
+        whale_score = calculate_discovery_score(**{key: whale_stats[key] for key in score_args})
+        balanced_score = calculate_discovery_score(**{key: balanced_stats[key] for key in score_args})
+        if whale_score >= balanced_score:
+            print("[ERROR] Expected balanced streams to outrank whale-dominated streams")
+            return False
+
+        print("[OK] Whale-heavy categories are adjusted before scoring")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Whale metrics test failed: {e}")
+        return False
+
+
 def main():
     print("=" * 60)
     print("Steam Twitch Viewer Dashboard - Smoke Tests")
@@ -457,10 +696,14 @@ def main():
         ("Project Structure", test_structure),
         ("Module Imports", test_imports),
         ("Twitch Tags", test_twitch_safe_tags),
+        ("LLM Tag Parsing", test_llm_tag_parsing),
+        ("Generated Title Context", test_generate_title_extra_context),
         ("Flask Route", test_flask_route),
         ("Twitch Login", test_twitch_login_route),
         ("Stream Update", test_stream_update_route),
         ("Viewer Cache", test_viewer_cache),
+        ("Platform Interleaving", test_platform_interleaving),
+        ("Whale Metrics", test_whale_adjusted_metrics),
     ]
 
     results = []
