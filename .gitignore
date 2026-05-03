@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+python_venv/
+python_portable/
 game_cache.json
 cache/
 static/cache/
